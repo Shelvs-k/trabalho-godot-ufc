@@ -440,22 +440,22 @@ scale = Vector2(2.5, 2.5)
 collision_layer = 5
 collision_mask = 3
 script = ExtResource("1_epot7")
-distancia_ataque = 100.0
-frames_attack_01 = Array[int]([5, 6])
-frames_attack_02 = Array[int]([4])
+distancia_ataque = 120.0
+frames_attack_01 = Array[int]([5, 6, 7])
+frames_attack_02 = Array[int]([3, 4, 5])
 
 [node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=1094031793]
 texture_filter = 1
 sprite_frames = SubResource("SpriteFrames_fwmec")
 animation = &"attack_01"
-frame = 9
-frame_progress = 1.0
 
 [node name="Colisão" type="CollisionShape2D" parent="." unique_id=1591445789]
 position = Vector2(-4.5, 30.5)
 shape = SubResource("RectangleShape2D_a02du")
 
 [node name="Hitbox" type="Area2D" parent="." unique_id=1621184531]
+collision_layer = 5
+collision_mask = 3
 
 [node name="Colisão" type="CollisionShape2D" parent="Hitbox" unique_id=395571191]
 position = Vector2(25.5, 3.5)
