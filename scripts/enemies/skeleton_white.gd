@@ -40,7 +40,6 @@ var ataque_atual: String = "attack_01"
 var proximo_ataque: String = "attack_02"
 
 var tempo_ataque: float = 0.0
-var pode_receber_dano: bool = true
 var hitboxes_atingidas: Array[Node] = []
 
 
@@ -223,7 +222,7 @@ func _on_hurtbox_area_entered(area: Area2D) -> void:
 
 
 func receber_dano(valor: int, origem: Vector2) -> void:
-	if estado == Estado.DIE or not pode_receber_dano:
+	if estado == Estado.DIE:
 		return
 
 	vida = maxi(0, vida - valor)
@@ -232,23 +231,19 @@ func receber_dano(valor: int, origem: Vector2) -> void:
 		morrer()
 		return
 
-	estado = Estado.HURT 
-	pode_receber_dano = false
+	estado = Estado.HURT
 
 	_desativar_hitbox()
 
 	var direcao = sign(global_position.x - origem.x)
 
+	if is_zero_approx(direcao):
+		direcao = 1.0 if sprite.flip_h else -1.0
+
 	velocity.x = direcao * knockback_horizontal
 	velocity.y = -knockback_vertical
 
 	sprite.play("hurt")
-
-	# Pequena janela de invulnerabilidade
-	get_tree().create_timer(0.35).timeout.connect(
-		func():
-			pode_receber_dano = true
-	)
 
 
 func morrer() -> void:

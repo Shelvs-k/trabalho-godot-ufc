@@ -34,7 +34,7 @@ var vida: int
 @export var frames_attack_air: Array[int] = []
 
 @export_group("Hitbox")
-var hitbox_offset_x: float = 90
+var hitbox_offset_editor: Vector2
 
 enum EstadoAnim {
 	IDLE,
@@ -65,6 +65,8 @@ var combo_pendente: bool = false
 
 func _ready() -> void:
 	vida = vida_maxima
+
+	hitbox_offset_editor = hitbox_shape.position
 
 	hitbox.add_to_group("player_hitbox")
 	hitbox_shape.disabled = true
@@ -307,9 +309,12 @@ func receber_dano(dano: int, origem: Vector2) -> bool:
 # Atualiza a orientação da hitbox
 func _atualizar_orientacao_hitbox() -> void:
 	if animReimu.flip_h:
-		hitbox_shape.position.x = -hitbox_offset_x
+		hitbox_shape.position = Vector2(
+			-hitbox_offset_editor.x,
+			hitbox_offset_editor.y
+		)
 	else:
-		hitbox_shape.position.x = hitbox_offset_x
+		hitbox_shape.position = hitbox_offset_editor
 
 
 # Ativa a hitbox somente nos frames de impacto

@@ -535,7 +535,8 @@ frames_attack_air = Array[int]([8, 9])
 
 [node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=1107217898]
 sprite_frames = SubResource("SpriteFrames_4kxuq")
-animation = &"attack_air"
+animation = &"idle"
+frame_progress = 0.35077745
 
 [node name="Hitbox" type="Area2D" parent="." unique_id=1336153033 groups=["player_hitbox"]]
 collision_layer = 3

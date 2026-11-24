@@ -21,4 +21,6 @@ shape = SubResource("RectangleShape2D_4kxuq")
 
 [node name="Skeleton_White" parent="." unique_id=190460209 instance=ExtResource("2_u1f2d")]
 position = Vector2(1064, 656)
-distancia_ataque = 100.0
+
+[node name="Skeleton_White2" parent="." unique_id=976759248 instance=ExtResource("2_u1f2d")]
+position = Vector2(89.99999, 65.99999)
