@@ -1,6 +1,8 @@
 
 extends CharacterBody2D
 
+signal vida_atualizada(vida_atual: int, vida_maxima: int)
+
 @onready var animReimu: AnimatedSprite2D = $Sprite
 @onready var hitbox: Area2D = $Hitbox
 @onready var hitbox_shape: CollisionShape2D = $Hitbox/Colisão
@@ -287,6 +289,7 @@ func receber_dano(dano: int, origem: Vector2) -> bool:
 		return false
 
 	vida = maxi(0, vida - dano)
+	vida_atualizada.emit(vida, vida_maxima)
 
 	invulneravel = true
 	tempo_invulneravel = tempo_invulnerabilidade

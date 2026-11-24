@@ -1,0 +1,32 @@
+[gd_scene format=3 uid="uid://db17cqo18u7bm"]
+
+[ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1_hud"]
+[ext_resource type="AtlasTexture" uid="uid://qldtah12lgnl" path="res://sprites/environment/new_atlas_texture.tres" id="2_barra"]
+
+[node name="HUD" type="CanvasLayer" unique_id=1667389072]
+script = ExtResource("1_hud")
+
+[node name="Interface" type="Control" parent="." unique_id=1043007268]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 1920.0
+offset_bottom = 1080.0
+
+[node name="FundoBarraVida" type="ColorRect" parent="Interface"]
+offset_left = 32.0
+offset_top = 32.0
+offset_right = 168.0
+offset_bottom = 52.0
+color = Color(0.12, 0.12, 0.16, 0.9)
+mouse_filter = 2
+
+[node name="BarraVida" type="TextureProgressBar" parent="Interface" unique_id=2141390181]
+layout_mode = 0
+offset_left = 32.0
+offset_top = 32.0
+offset_right = 168.0
+offset_bottom = 52.0
+max_value = 5.0
+texture_filter = 1
+texture_progress = ExtResource("2_barra")
+mouse_filter = 2
