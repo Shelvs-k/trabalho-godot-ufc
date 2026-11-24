@@ -34,7 +34,7 @@ var vida: int
 @export var frames_attack_air: Array[int] = []
 
 @export_group("Hitbox")
-@export var hitbox_offset_x: float = 45.0
+var hitbox_offset_x: float = 90
 
 enum EstadoAnim {
 	IDLE,
@@ -296,7 +296,7 @@ func receber_dano(dano: int, origem: Vector2) -> bool:
 	if is_zero_approx(direcao_knockback):
 		direcao_knockback = -1.0 if animReimu.flip_h else 1.0
 
-	velocity.x = -direcao_knockback * knockback_horizontal
+	velocity.x = direcao_knockback * knockback_horizontal
 	velocity.y = -knockback_vertical
 
 	estadoAnimacao = EstadoAnim.HIT

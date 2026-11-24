@@ -149,7 +149,7 @@ animations = [{
 }],
 "loop": 0,
 "name": &"attack_01",
-"speed": 24.0
+"speed": 44.0
 }, {
 "frames": [{
 "duration": 1.0,
@@ -193,7 +193,7 @@ animations = [{
 }],
 "loop": 0,
 "name": &"attack_02",
-"speed": 24.0
+"speed": 44.0
 }, {
 "frames": [{
 "duration": 1.0,
@@ -249,7 +249,7 @@ animations = [{
 }],
 "loop": 0,
 "name": &"attack_air",
-"speed": 24.0
+"speed": 44.0
 }, {
 "frames": [{
 "duration": 1.0,
@@ -519,10 +519,13 @@ animations = [{
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_2h6xt"]
 size = Vector2(98, 167)
 
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_epot7"]
+size = Vector2(74, 150)
+
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_a7luw"]
 size = Vector2(91, 167)
 
-[node name="Reimu" type="CharacterBody2D" unique_id=1559367311]
+[node name="Reimu" type="CharacterBody2D" unique_id=1559367311 groups=["player"]]
 collision_layer = 3
 collision_mask = 5
 script = ExtResource("1_1iki0")
@@ -534,12 +537,12 @@ frames_attack_air = Array[int]([8, 9])
 sprite_frames = SubResource("SpriteFrames_4kxuq")
 animation = &"attack_air"
 
-[node name="Hitbox" type="Area2D" parent="." unique_id=1336153033]
+[node name="Hitbox" type="Area2D" parent="." unique_id=1336153033 groups=["player_hitbox"]]
 collision_layer = 3
 collision_mask = 5
 
 [node name="Colisão" type="CollisionShape2D" parent="Hitbox" unique_id=1585334119]
-position = Vector2(92, -10)
+position = Vector2(102, -4)
 shape = SubResource("RectangleShape2D_2h6xt")
 debug_color = Color(0.9822903, 0, 0.3676981, 0.41960785)
 
@@ -548,6 +551,9 @@ collision_layer = 3
 collision_mask = 5
 
 [node name="Colisão" type="CollisionShape2D" parent="Hurtbox" unique_id=157269940]
+position = Vector2(-2, 10)
+shape = SubResource("RectangleShape2D_epot7")
+debug_color = Color(0.8591321, 0.0007023239, 0.8792253, 0.41960785)
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1860998430]
 
