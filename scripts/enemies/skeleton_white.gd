@@ -210,6 +210,12 @@ func _on_hurtbox_area_entered(area: Area2D) -> void:
 	if not is_instance_valid(atacante):
 		return
 
+	# Deixa o jogador controlar a deduplicação por golpe. Isso mantém a
+	# detecção por sinal como fallback e evita dano duplicado na checagem contínua.
+	if atacante.has_method("registrar_acerto"):
+		atacante.registrar_acerto(self)
+		return
+
 	var dano_recebido := 1
 
 	if atacante.has_method("get"):

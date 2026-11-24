@@ -61,6 +61,7 @@ var tempo_invulneravel: float = 0.0
 
 var freando_dash: bool = false
 var combo_pendente: bool = false
+var alvos_atingidos: Array[Node] = []
 
 
 func _ready() -> void:
@@ -111,6 +112,7 @@ func _physics_process(delta: float) -> void:
 				estadoAnimacao = EstadoAnim.ATTACK_01
 			else:
 				estadoAnimacao = EstadoAnim.ATTACK_AIR
+			alvos_atingidos.clear()
 
 	# Estados de ação
 	var atacando = estadoAnimacao in [
@@ -186,6 +188,7 @@ func _physics_process(delta: float) -> void:
 			estadoAnimacao = EstadoAnim.JUMP_S
 
 	move_and_slide()
+	_verificar_alvos_atingidos()
 
 	# Atualização dos estados de movimento
 	if not atacando and not recebendo_hit:
@@ -348,6 +351,31 @@ func _desativar_hitbox() -> void:
 	hitbox.set_deferred("monitoring", false)
 
 
+# Confere os hurtboxes continuamente durante os frames ativos. O sinal
+# area_entered sozinho pode não disparar se a área já estiver sobreposta
+# quando monitoring é reativado.
+func _verificar_alvos_atingidos() -> void:
+	if not hitbox.monitoring or hitbox_shape.disabled:
+		return
+
+	for area in hitbox.get_overlapping_areas():
+		var alvo := area.get_parent()
+		if is_instance_valid(alvo) and alvo.is_in_group("enemies"):
+			registrar_acerto(alvo)
+
+
+func registrar_acerto(alvo: Node) -> void:
+	if not is_instance_valid(alvo) or not alvo.is_in_group("enemies"):
+		return
+	if alvo in alvos_atingidos:
+		return
+	if not alvo.has_method("receber_dano"):
+		return
+
+	alvos_atingidos.append(alvo)
+	alvo.receber_dano(dano_ataque, global_position)
+
+
 # Define o estado após uma ação terminar
 func _finalizar_acao() -> void:
 	var direction = Input.get_axis("left", "right")
@@ -423,6 +451,7 @@ func _on_sprite_animation_finished() -> void:
 			if estadoAnimacao == EstadoAnim.ATTACK_01:
 				if combo_pendente:
 					combo_pendente = false
+					alvos_atingidos.clear()
 					estadoAnimacao = EstadoAnim.ATTACK_02
 				else:
 					_finalizar_acao()
