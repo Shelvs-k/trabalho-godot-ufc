@@ -1,5 +1,7 @@
 import math
 import os
+import re
+import shutil
 from collections import deque
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, ttk
@@ -7,6 +9,539 @@ from tkinter import colorchooser, filedialog, messagebox, ttk
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+
+
+def natural_sort_key(path: str) -> list[object]:
+    """Chave de ordenação natural (ex.: frame_1, frame_2, frame_10)."""
+    base = os.path.basename(path).lower()
+    parts = re.split(r"(\d+)", base)
+    return [int(part) if part.isdigit() else part for part in parts]
+
+
+def make_checkerboard(width: int, height: int, tile: int = 8) -> Image.Image:
+    """Gera fundo xadrez cinza para evidenciar canais alfa/transparência."""
+    w = max(1, width)
+    h = max(1, height)
+    checker = Image.new("RGBA", (w, h), (200, 200, 200, 255))
+    c_arr = np.array(checker)
+    for y in range(0, h, tile):
+        for x in range(0, w, tile):
+            if ((x // tile) + (y // tile)) % 2 == 1:
+                c_arr[y : y + tile, x : x + tile, :3] = 140
+    return Image.fromarray(c_arr, mode="RGBA")
+
+
+class AnimationAssemblerWindow:
+    """Janela de montagem, reordenação, pré-visualização e exportação de animações."""
+
+    SUPPORTED_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif")
+
+    def __init__(self, parent: tk.Tk, parse_hex_fn) -> None:
+        self.parent = parent
+        self._parse_hex_color = parse_hex_fn
+
+        self.win = tk.Toplevel(parent)
+        self.win.title("Montador e Pré-Visualizador de Animação (Godot)")
+        self.win.geometry("1120x680")
+        self.win.minsize(920, 560)
+
+        # Lista de dicts: {"path": str, "name": str, "image": Image.Image}
+        self.frames: list[dict[str, object]] = []
+        self.current_idx: int = 0
+        self.is_playing: bool = False
+        self._after_id: str | None = None
+        self._preview_photo: ImageTk.PhotoImage | None = None
+
+        self._build_ui()
+        self._update_bg_controls()
+        self._refresh_frame_list(preserve_selection=False)
+        self._render_current_frame()
+        self.win.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # -------------------------------------------------------------------------
+    # Interface em 3 Áreas
+    # -------------------------------------------------------------------------
+    def _build_ui(self) -> None:
+        root_pane = ttk.PanedWindow(self.win, orient=tk.HORIZONTAL)
+        root_pane.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        # Área 1: Lista de frames importados
+        left_panel = ttk.LabelFrame(root_pane, text="1. Frames da Animação", padding=8)
+        root_pane.add(left_panel, weight=1)
+
+        imp_row1 = ttk.Frame(left_panel)
+        imp_row1.pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(imp_row1, text="Importar Imagens...", command=self.import_files).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4)
+        )
+        ttk.Button(imp_row1, text="Importar Pasta...", command=self.import_folder).pack(
+            side=tk.LEFT, fill=tk.X, expand=True
+        )
+
+        ord_row = ttk.Frame(left_panel)
+        ord_row.pack(fill=tk.X, pady=(0, 6))
+        ttk.Button(ord_row, text="Subir ▲", command=self.move_frame_up).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        ttk.Button(ord_row, text="Descer ▼", command=self.move_frame_down).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4)
+        )
+        ttk.Button(ord_row, text="Remover", command=self.remove_selected_frame).pack(side=tk.LEFT)
+
+        list_wrap = ttk.Frame(left_panel)
+        list_wrap.pack(fill=tk.BOTH, expand=True)
+
+        sb = ttk.Scrollbar(list_wrap, orient=tk.VERTICAL)
+        self.frame_listbox = tk.Listbox(list_wrap, yscrollcommand=sb.set, exportselection=False)
+        sb.config(command=self.frame_listbox.yview)
+        self.frame_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.frame_listbox.bind("<<ListboxSelect>>", self._on_select_frame)
+
+        ttk.Button(left_panel, text="Limpar Lista", command=self.clear_frames).pack(fill=tk.X, pady=(6, 0))
+
+        # Área 2: Preview da animação
+        center_panel = ttk.LabelFrame(root_pane, text="2. Pré-Visualização da Animação", padding=8)
+        root_pane.add(center_panel, weight=3)
+
+        self.preview_canvas = tk.Canvas(center_panel, bg="#181c24", highlightthickness=0)
+        self.preview_canvas.pack(fill=tk.BOTH, expand=True)
+        self.preview_canvas.bind("<Configure>", lambda _e: self._render_current_frame())
+
+        status_bar = ttk.Frame(center_panel)
+        status_bar.pack(fill=tk.X, pady=(6, 0))
+        self.frame_counter_var = tk.StringVar(value="Frame: 0 / 0")
+        ttk.Label(status_bar, textvariable=self.frame_counter_var, font=("TkDefaultFont", 10, "bold")).pack(
+            side=tk.LEFT
+        )
+        self.frame_meta_var = tk.StringVar(value="Nenhum frame carregado.")
+        ttk.Label(status_bar, textvariable=self.frame_meta_var).pack(side=tk.RIGHT)
+
+        # Área 3: Configurações, reprodução e exportação
+        right_panel = ttk.Frame(root_pane, padding=4)
+        root_pane.add(right_panel, weight=1)
+
+        pb_box = ttk.LabelFrame(right_panel, text="3. Reprodução", padding=8)
+        pb_box.pack(fill=tk.X, pady=(0, 8))
+
+        transport_row = ttk.Frame(pb_box)
+        transport_row.pack(fill=tk.X, pady=(0, 6))
+        self.play_btn_var = tk.StringVar(value="▶ Play")
+        ttk.Button(transport_row, textvariable=self.play_btn_var, command=self.toggle_play).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4)
+        )
+        ttk.Button(transport_row, text="⏹ Reiniciar", command=self.restart_animation).pack(side=tk.LEFT)
+
+        step_row = ttk.Frame(pb_box)
+        step_row.pack(fill=tk.X)
+        ttk.Button(step_row, text="◀ Anterior", command=self.prev_frame).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4)
+        )
+        ttk.Button(step_row, text="Próximo ▶", command=self.next_frame).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        cfg_box = ttk.LabelFrame(right_panel, text="Configurações da Animação", padding=8)
+        cfg_box.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(cfg_box, text="FPS:").pack(anchor=tk.W)
+        self.fps_var = tk.IntVar(value=12)
+        ttk.Spinbox(cfg_box, from_=1, to=120, textvariable=self.fps_var, width=8).pack(anchor=tk.W, pady=(0, 4))
+
+        ttk.Label(cfg_box, text="Velocidade (0.1x - 4.0x):").pack(anchor=tk.W)
+        self.speed_var = tk.DoubleVar(value=1.0)
+        speed_row = ttk.Frame(cfg_box)
+        speed_row.pack(fill=tk.X, pady=(0, 4))
+        ttk.Scale(speed_row, from_=0.1, to=4.0, variable=self.speed_var, orient=tk.HORIZONTAL).pack(
+            side=tk.LEFT, fill=tk.X, expand=True
+        )
+        self.speed_lbl_var = tk.StringVar(value="1.0x")
+        ttk.Label(speed_row, textvariable=self.speed_lbl_var, width=5).pack(side=tk.RIGHT)
+        self.speed_var.trace_add("write", lambda *_a: self.speed_lbl_var.set(f"{max(0.1, float(self.speed_var.get())):.1f}x"))
+
+        ttk.Label(cfg_box, text="Escala de Visualização:").pack(anchor=tk.W)
+        self.scale_var = tk.DoubleVar(value=2.0)
+        scale_row = ttk.Frame(cfg_box)
+        scale_row.pack(fill=tk.X, pady=(0, 6))
+        ttk.Scale(
+            scale_row,
+            from_=0.5,
+            to=8.0,
+            variable=self.scale_var,
+            orient=tk.HORIZONTAL,
+            command=lambda _v: self._render_current_frame(),
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.scale_lbl_var = tk.StringVar(value="2.0x")
+        ttk.Label(scale_row, textvariable=self.scale_lbl_var, width=5).pack(side=tk.RIGHT)
+        self.scale_var.trace_add("write", lambda *_a: self.scale_lbl_var.set(f"{float(self.scale_var.get()):.1f}x"))
+
+        self.loop_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(cfg_box, text="Reproduzir em loop", variable=self.loop_var).pack(anchor=tk.W)
+
+        ttk.Label(cfg_box, text="Fundo do Preview:").pack(anchor=tk.W, pady=(6, 2))
+        self.preview_bg_mode_var = tk.StringVar(value="checker")
+        bg_modes = ttk.Frame(cfg_box)
+        bg_modes.pack(fill=tk.X)
+        ttk.Radiobutton(
+            bg_modes, text="Xadrez", value="checker", variable=self.preview_bg_mode_var, command=self._update_bg_controls
+        ).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Radiobutton(
+            bg_modes, text="Sólido", value="solid", variable=self.preview_bg_mode_var, command=self._update_bg_controls
+        ).pack(side=tk.LEFT)
+
+        self.solid_bg_row = ttk.Frame(cfg_box)
+        self.solid_bg_row.pack(fill=tk.X, pady=(4, 0))
+        self.preview_bg_hex_var = tk.StringVar(value="#2b303a")
+        self.bg_hex_entry = ttk.Entry(self.solid_bg_row, textvariable=self.preview_bg_hex_var, width=9)
+        self.bg_hex_entry.pack(side=tk.LEFT, padx=(0, 4))
+        self.bg_swatch = tk.Label(
+            self.solid_bg_row,
+            background=self.preview_bg_hex_var.get(),
+            width=3,
+            relief=tk.SOLID,
+            borderwidth=1,
+        )
+        self.bg_swatch.pack(side=tk.LEFT, padx=(0, 4))
+        self.bg_pick_btn = ttk.Button(self.solid_bg_row, text="Cor...", command=self._pick_preview_bg, width=6)
+        self.bg_pick_btn.pack(side=tk.LEFT)
+        self.preview_bg_hex_var.trace_add("write", lambda *_a: self._on_bg_hex_change())
+
+        exp_box = ttk.LabelFrame(right_panel, text="Exportação para Godot", padding=8)
+        exp_box.pack(fill=tk.X)
+
+        ttk.Label(exp_box, text="Prefixo:").pack(anchor=tk.W)
+        self.anim_prefix_var = tk.StringVar(value="anim_frame")
+        ttk.Entry(exp_box, textvariable=self.anim_prefix_var).pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Button(exp_box, text="Exportar Sequência Ordenada...", command=self.export_sequence).pack(
+            fill=tk.X, pady=(0, 4)
+        )
+        ttk.Button(exp_box, text="Exportar Spritesheet Horizontal...", command=lambda: self.export_sheet("horizontal")).pack(
+            fill=tk.X, pady=(0, 4)
+        )
+        ttk.Button(exp_box, text="Exportar Spritesheet Vertical...", command=lambda: self.export_sheet("vertical")).pack(
+            fill=tk.X
+        )
+
+    def _update_bg_controls(self) -> None:
+        is_solid = self.preview_bg_mode_var.get() == "solid"
+        state = tk.NORMAL if is_solid else tk.DISABLED
+        self.bg_hex_entry.configure(state=state)
+        self.bg_pick_btn.configure(state=state)
+        self._render_current_frame()
+
+    def _on_bg_hex_change(self) -> None:
+        rgb = self._parse_hex_color(self.preview_bg_hex_var.get())
+        if rgb is not None:
+            self.bg_swatch.configure(background=f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}")
+        self._render_current_frame()
+
+    def _pick_preview_bg(self) -> None:
+        initial = self.preview_bg_hex_var.get()
+        if self._parse_hex_color(initial) is None:
+            initial = "#2b303a"
+        chosen = colorchooser.askcolor(color=initial, title="Escolher Cor de Fundo do Preview", parent=self.win)
+        if chosen and chosen[1]:
+            self.preview_bg_hex_var.set(chosen[1].lower())
+
+    # -------------------------------------------------------------------------
+    # Importação e Reordenação (Sem Alterar Arquivos Originais)
+    # -------------------------------------------------------------------------
+    def _load_frame_items(self, paths: list[str]) -> tuple[int, list[str]]:
+        loaded = 0
+        errors: list[str] = []
+        for path in sorted(paths, key=natural_sort_key):
+            try:
+                with Image.open(path) as raw:
+                    rgba = raw.convert("RGBA").copy()
+                self.frames.append({"path": path, "name": os.path.basename(path), "image": rgba})
+                loaded += 1
+            except Exception as exc:
+                errors.append(f"{os.path.basename(path)}: {exc}")
+        return loaded, errors
+
+    def import_files(self) -> None:
+        paths = filedialog.askopenfilenames(
+            title="Selecionar Frames da Animação",
+            parent=self.win,
+            filetypes=[
+                ("Imagens de frames", "*.png *.jpg *.jpeg *.bmp *.webp *.gif"),
+                ("Todos os arquivos", "*.*"),
+            ],
+        )
+        if not paths:
+            return
+        loaded, errors = self._load_frame_items(list(paths))
+        if loaded > 0 and self.current_idx >= len(self.frames):
+            self.current_idx = 0
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+        if errors:
+            messagebox.showwarning("Arquivos ignorados", "Alguns arquivos não puderam ser carregados:\n" + "\n".join(errors[:8]), parent=self.win)
+
+    def import_folder(self) -> None:
+        folder = filedialog.askdirectory(title="Selecionar Pasta com Frames", parent=self.win)
+        if not folder:
+            return
+        try:
+            entries = [
+                os.path.join(folder, fname)
+                for fname in os.listdir(folder)
+                if os.path.isfile(os.path.join(folder, fname)) and fname.lower().endswith(self.SUPPORTED_EXTS)
+            ]
+        except Exception as exc:
+            messagebox.showerror("Erro ao ler pasta", f"Não foi possível acessar a pasta:\n{exc}", parent=self.win)
+            return
+
+        if not entries:
+            messagebox.showinfo("Pasta vazia", "Nenhuma imagem compatível encontrada na pasta selecionada.", parent=self.win)
+            return
+
+        loaded, errors = self._load_frame_items(entries)
+        if loaded > 0 and self.current_idx >= len(self.frames):
+            self.current_idx = 0
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+        if errors:
+            messagebox.showwarning("Arquivos ignorados", "Alguns arquivos não puderam ser carregados:\n" + "\n".join(errors[:8]), parent=self.win)
+
+    def _refresh_frame_list(self, preserve_selection: bool = True) -> None:
+        self.frame_listbox.delete(0, tk.END)
+        for idx, item in enumerate(self.frames, start=1):
+            w, h = item["image"].size
+            self.frame_listbox.insert(tk.END, f"{idx:03d} | {item['name']} ({w}x{h})")
+
+        if not self.frames:
+            self.current_idx = 0
+            self.frame_counter_var.set("Frame: 0 / 0")
+            self.frame_meta_var.set("Nenhum frame carregado.")
+            return
+
+        if preserve_selection:
+            self.current_idx = max(0, min(self.current_idx, len(self.frames) - 1))
+        self.frame_listbox.selection_clear(0, tk.END)
+        self.frame_listbox.selection_set(self.current_idx)
+        self.frame_listbox.see(self.current_idx)
+        self._update_frame_labels()
+
+    def _update_frame_labels(self) -> None:
+        total = len(self.frames)
+        if total == 0:
+            self.frame_counter_var.set("Frame: 0 / 0")
+            self.frame_meta_var.set("Nenhum frame carregado.")
+            return
+        idx = max(0, min(self.current_idx, total - 1))
+        item = self.frames[idx]
+        w, h = item["image"].size
+        self.frame_counter_var.set(f"Frame: {idx + 1} / {total}")
+        self.frame_meta_var.set(f"{item['name']} • {w}x{h}px")
+
+    def _on_select_frame(self, _event: tk.Event) -> None:
+        sel = self.frame_listbox.curselection()
+        if sel:
+            self.current_idx = int(sel[0])
+            self._update_frame_labels()
+            self._render_current_frame()
+
+    def move_frame_up(self) -> None:
+        if len(self.frames) < 2 or self.current_idx <= 0:
+            return
+        i = self.current_idx
+        self.frames[i - 1], self.frames[i] = self.frames[i], self.frames[i - 1]
+        self.current_idx = i - 1
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+
+    def move_frame_down(self) -> None:
+        if len(self.frames) < 2 or self.current_idx >= len(self.frames) - 1:
+            return
+        i = self.current_idx
+        self.frames[i + 1], self.frames[i] = self.frames[i], self.frames[i + 1]
+        self.current_idx = i + 1
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+
+    def remove_selected_frame(self) -> None:
+        if not self.frames:
+            return
+        del self.frames[self.current_idx]
+        if self.current_idx >= len(self.frames):
+            self.current_idx = max(0, len(self.frames) - 1)
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+
+    def clear_frames(self) -> None:
+        self._stop_playback()
+        self.frames = []
+        self.current_idx = 0
+        self._refresh_frame_list(preserve_selection=False)
+        self._render_current_frame()
+
+    # -------------------------------------------------------------------------
+    # Controle de Reprodução e Renderização
+    # -------------------------------------------------------------------------
+    def toggle_play(self) -> None:
+        if not self.frames:
+            messagebox.showwarning("Aviso", "Importe ao menos um frame para reproduzir.", parent=self.win)
+            return
+        if self.is_playing:
+            self._stop_playback()
+        else:
+            if not self.loop_var.get() and self.current_idx >= len(self.frames) - 1:
+                self.current_idx = 0
+            self.is_playing = True
+            self.play_btn_var.set("⏸ Pause")
+            self._schedule_next_tick()
+
+    def _stop_playback(self) -> None:
+        self.is_playing = False
+        self.play_btn_var.set("▶ Play")
+        if self._after_id is not None:
+            try:
+                self.win.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+            self._after_id = None
+
+    def restart_animation(self) -> None:
+        if not self.frames:
+            return
+        self.current_idx = 0
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+
+    def prev_frame(self) -> None:
+        if not self.frames:
+            return
+        self._stop_playback()
+        self.current_idx = (self.current_idx - 1) % len(self.frames)
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+
+    def next_frame(self) -> None:
+        if not self.frames:
+            return
+        self._stop_playback()
+        self.current_idx = (self.current_idx + 1) % len(self.frames)
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+
+    def _schedule_next_tick(self) -> None:
+        if not self.is_playing or not self.frames:
+            return
+        fps = max(1, int(self.fps_var.get()))
+        speed = max(0.1, float(self.speed_var.get()))
+        delay_ms = max(10, int(round(1000.0 / (fps * speed))))
+        self._after_id = self.win.after(delay_ms, self._advance_frame)
+
+    def _advance_frame(self) -> None:
+        self._after_id = None
+        if not self.is_playing or not self.frames:
+            return
+
+        if self.current_idx + 1 < len(self.frames):
+            self.current_idx += 1
+        elif self.loop_var.get():
+            self.current_idx = 0
+        else:
+            self._stop_playback()
+            self._refresh_frame_list(preserve_selection=True)
+            self._render_current_frame()
+            return
+
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+        self._schedule_next_tick()
+
+    def _render_current_frame(self) -> None:
+        self.preview_canvas.delete("all")
+        if not self.frames:
+            return
+
+        idx = max(0, min(self.current_idx, len(self.frames) - 1))
+        src_rgba: Image.Image = self.frames[idx]["image"]
+        scale = max(0.25, min(12.0, float(self.scale_var.get())))
+        disp_w = max(1, int(round(src_rgba.width * scale)))
+        disp_h = max(1, int(round(src_rgba.height * scale)))
+
+        resample = Image.Resampling.NEAREST if scale >= 1.5 else Image.Resampling.BILINEAR
+        scaled_rgba = src_rgba.resize((disp_w, disp_h), resample)
+
+        if self.preview_bg_mode_var.get() == "solid":
+            rgb = self._parse_hex_color(self.preview_bg_hex_var.get()) or (43, 48, 58)
+            bg_img = Image.new("RGBA", (disp_w, disp_h), (rgb[0], rgb[1], rgb[2], 255))
+        else:
+            bg_img = make_checkerboard(disp_w, disp_h, tile=8)
+
+        composed = Image.alpha_composite(bg_img, scaled_rgba)
+        self._preview_photo = ImageTk.PhotoImage(composed)
+
+        cw = max(1, self.preview_canvas.winfo_width())
+        ch = max(1, self.preview_canvas.winfo_height())
+        self.preview_canvas.create_image(cw // 2, ch // 2, anchor=tk.CENTER, image=self._preview_photo)
+
+    # -------------------------------------------------------------------------
+    # Exportação de Sequência e Spritesheet
+    # -------------------------------------------------------------------------
+    def export_sequence(self) -> None:
+        if not self.frames:
+            messagebox.showwarning("Aviso", "Não há frames para exportar.", parent=self.win)
+            return
+        out_dir = filedialog.askdirectory(title="Escolher Pasta para Sequência de Frames", parent=self.win)
+        if not out_dir:
+            return
+        prefix = self.anim_prefix_var.get().strip() or "frame"
+        try:
+            for i, item in enumerate(self.frames, start=1):
+                dest_path = os.path.join(out_dir, f"{prefix}_{i:03d}.png")
+                src_path = item["path"]
+                if os.path.exists(src_path) and src_path.lower().endswith(".png"):
+                    shutil.copy2(src_path, dest_path)
+                else:
+                    item["image"].save(dest_path, format="PNG")
+        except Exception as exc:
+            messagebox.showerror("Erro na exportação", f"Falha ao exportar sequência:\n{exc}", parent=self.win)
+            return
+        messagebox.showinfo("Exportado", f"{len(self.frames)} frames salvos em:\n{out_dir}", parent=self.win)
+
+    def export_sheet(self, orientation: str) -> None:
+        if not self.frames:
+            messagebox.showwarning("Aviso", "Não há frames para montar a spritesheet.", parent=self.win)
+            return
+        out_path = filedialog.asksaveasfilename(
+            title="Salvar Spritesheet PNG",
+            parent=self.win,
+            defaultextension=".png",
+            initialfile=f"{self.anim_prefix_var.get().strip() or 'anim'}_{orientation}.png",
+            filetypes=[("PNG", "*.png")],
+        )
+        if not out_path:
+            return
+
+        imgs: list[Image.Image] = [item["image"] for item in self.frames]
+        if orientation == "horizontal":
+            total_w = sum(im.width for im in imgs)
+            total_h = max(im.height for im in imgs)
+            sheet = Image.new("RGBA", (total_w, total_h), (0, 0, 0, 0))
+            x_cursor = 0
+            for im in imgs:
+                sheet.paste(im, (x_cursor, 0), im)
+                x_cursor += im.width
+        else:
+            total_w = max(im.width for im in imgs)
+            total_h = sum(im.height for im in imgs)
+            sheet = Image.new("RGBA", (total_w, total_h), (0, 0, 0, 0))
+            y_cursor = 0
+            for im in imgs:
+                sheet.paste(im, (0, y_cursor), im)
+                y_cursor += im.height
+
+        try:
+            sheet.save(out_path, format="PNG")
+        except Exception as exc:
+            messagebox.showerror("Erro ao salvar", f"Falha ao gerar spritesheet:\n{exc}", parent=self.win)
+            return
+        messagebox.showinfo("Spritesheet salva", f"Spritesheet salva em:\n{out_path}", parent=self.win)
+
+    def _on_close(self) -> None:
+        self._stop_playback()
+        self.win.destroy()
 
 
 class SpriteExtractorApp:
@@ -25,6 +560,7 @@ class SpriteExtractorApp:
         self.selected_idx: int | None = None
         self.copied_rect: list[int] | None = None
         self._paste_offset_step: int = 0
+        self._anim_window: AnimationAssemblerWindow | None = None
 
         # Estado de visualização (zoom e pan)
         self.zoom: float = 1.0
@@ -50,14 +586,16 @@ class SpriteExtractorApp:
     # Interface Gráfica
     # -------------------------------------------------------------------------
     def _build_ui(self) -> None:
-        # Barra superior de ações principais
         top_bar = ttk.Frame(self.root, padding=6)
         top_bar.pack(side=tk.TOP, fill=tk.X)
 
         ttk.Button(top_bar, text="Abrir Spritesheet", command=self.open_image).pack(side=tk.LEFT, padx=(0, 6))
         ttk.Button(top_bar, text="Detectar Sprites", command=self.detect_sprites).pack(side=tk.LEFT, padx=(0, 6))
         ttk.Button(top_bar, text="Ordenar Leitura", command=self.sort_and_refresh).pack(side=tk.LEFT, padx=(0, 6))
-        ttk.Button(top_bar, text="Resetar Zoom", command=self.reset_view).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Button(top_bar, text="Resetar Zoom", command=self.reset_view).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(top_bar, text="Montar Animação...", command=self.open_animation_assembler).pack(
+            side=tk.LEFT, padx=(0, 12)
+        )
 
         self.count_var = tk.StringVar(value="Sprites detectados: 0")
         ttk.Label(top_bar, textvariable=self.count_var, font=("TkDefaultFont", 10, "bold")).pack(side=tk.LEFT, padx=8)
@@ -65,7 +603,6 @@ class SpriteExtractorApp:
         self.info_var = tk.StringVar(value="Abra um arquivo de imagem para começar.")
         ttk.Label(top_bar, textvariable=self.info_var).pack(side=tk.RIGHT, padx=8)
 
-        # Área principal dividida (Esquerda: Canvas | Direita: Controles)
         main_pane = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         main_pane.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
 
@@ -75,11 +612,9 @@ class SpriteExtractorApp:
         self.canvas = tk.Canvas(canvas_frame, bg="#181c24", highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
-        # Painel lateral direito
         side_panel = ttk.Frame(main_pane, width=355, padding=6)
         main_pane.add(side_panel, weight=1)
 
-        # 1. Parâmetros de Detecção
         det_box = ttk.LabelFrame(side_panel, text="1. Parâmetros de Detecção", padding=8)
         det_box.pack(fill=tk.X, pady=(0, 8))
 
@@ -102,7 +637,6 @@ class SpriteExtractorApp:
             variable=self.split_adj_var,
         ).pack(anchor=tk.W, pady=(6, 0))
 
-        # 2. Edição Manual e Lista
         edit_box = ttk.LabelFrame(side_panel, text="2. Retângulos & Correção Manual", padding=8)
         edit_box.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
@@ -139,7 +673,6 @@ class SpriteExtractorApp:
         self.rect_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # 3. Remoção de Fundo e Exportação
         exp_box = ttk.LabelFrame(side_panel, text="3. Remoção de Fundo & Exportação", padding=8)
         exp_box.pack(fill=tk.X)
 
@@ -157,7 +690,6 @@ class SpriteExtractorApp:
             bg_mode_row, text="Nenhum", value="none", variable=self.bg_mode_var, command=self._update_bg_ui_state
         ).pack(side=tk.LEFT)
 
-        # Controles específicos de Chroma Key
         self.chroma_frame = ttk.Frame(exp_box)
         self.chroma_frame.pack(fill=tk.X, pady=(2, 4))
 
@@ -205,6 +737,13 @@ class SpriteExtractorApp:
         )
 
         self._update_bg_ui_state()
+
+    def open_animation_assembler(self) -> None:
+        if self._anim_window is not None and self._anim_window.win.winfo_exists():
+            self._anim_window.win.lift()
+            self._anim_window.win.focus_force()
+            return
+        self._anim_window = AnimationAssemblerWindow(self.root, self._parse_hex_color)
 
     def _sync_swatch_color(self) -> None:
         rgb = self._parse_hex_color(self.chroma_color_var.get())
@@ -257,13 +796,11 @@ class SpriteExtractorApp:
         self.canvas.bind("<B1-Motion>", self.on_mouse_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_mouse_up)
 
-        # Pan com botão do meio ou botão direito
         self.canvas.bind("<ButtonPress-2>", self.on_pan_start)
         self.canvas.bind("<B2-Motion>", self.on_pan_drag)
         self.canvas.bind("<ButtonPress-3>", self.on_pan_start)
         self.canvas.bind("<B3-Motion>", self.on_pan_drag)
 
-        # Zoom com scroll do mouse (Windows/macOS/Linux)
         self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
         self.canvas.bind("<Button-4>", lambda e: self.zoom_at(1.15, e.x, e.y))
         self.canvas.bind("<Button-5>", lambda e: self.zoom_at(1 / 1.15, e.x, e.y))
@@ -271,7 +808,6 @@ class SpriteExtractorApp:
         self.rect_listbox.bind("<<ListboxSelect>>", self.on_listbox_select)
         self.root.bind("<Delete>", lambda _e: self.delete_selected())
 
-        # Atalhos Ctrl+C e Ctrl+V (minúsculo e maiúsculo)
         self.root.bind("<Control-c>", self._on_ctrl_c)
         self.root.bind("<Control-C>", self._on_ctrl_c)
         self.root.bind("<Control-v>", self._on_ctrl_v)
@@ -937,7 +1473,6 @@ class SpriteExtractorApp:
         if bg_mode == "chroma_key":
             target_rgb = self._parse_hex_color(self.chroma_color_var.get())
             if target_rgb is None:
-                # Fallback para mediana das bordas caso hex esteja inválido
                 border_pixels = np.concatenate(
                     [rgb[0, :, :], rgb[h - 1, :, :], rgb[:, 0, :], rgb[:, w - 1, :]],
                     axis=0,
@@ -946,12 +1481,10 @@ class SpriteExtractorApp:
             else:
                 key_color = np.array(target_rgb, dtype=np.int16)
 
-            # Remove todos os pixels (incluindo ilhas/espaços internos) dentro da tolerância
             diff = np.max(np.abs(rgb - key_color), axis=2)
             arr[diff <= tol, 3] = 0
             return Image.fromarray(arr, mode="RGBA")
 
-        # Modo padrão: flood_fill a partir das bordas
         border_pixels = np.concatenate(
             [
                 rgb[0, :, :],
@@ -1007,14 +1540,7 @@ class SpriteExtractorApp:
         win.title(f"Prévia Sprite #{self.selected_idx + 1:03d} ({sprite_img.width}x{sprite_img.height}px)")
         win.geometry("360x360")
 
-        checker = Image.new("RGBA", sprite_img.size, (200, 200, 200, 255))
-        c_arr = np.array(checker)
-        tile = 8
-        for y in range(0, sprite_img.height, tile):
-            for x in range(0, sprite_img.width, tile):
-                if ((x // tile) + (y // tile)) % 2 == 1:
-                    c_arr[y : y + tile, x : x + tile, :3] = 140
-        composed = Image.alpha_composite(Image.fromarray(c_arr, mode="RGBA"), sprite_img)
+        composed = Image.alpha_composite(make_checkerboard(sprite_img.width, sprite_img.height, tile=8), sprite_img)
 
         scale = min(300 / max(1, composed.width), 300 / max(1, composed.height), 4.0)
         disp = composed.resize(

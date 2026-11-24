@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://4kd3chvn5lgr"]
+
+[ext_resource type="PackedScene" uid="uid://c8lea5njsc8ty" path="res://scenes/player/reimu.tscn" id="1_1ocf6"]
+[ext_resource type="PackedScene" uid="uid://3sbxvg8x67t4" path="res://scenes/enemies/skeleton_white.tscn" id="2_u1f2d"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_4kxuq"]
+size = Vector2(1972, 208)
+
+[node name="Fase 1" type="Node2D" unique_id=2078015824]
+
+[node name="Reimu" parent="." unique_id=1559367311 groups=["player"] instance=ExtResource("1_1ocf6")]
+position = Vector2(487, 474)
+collision_layer = 2
+collision_mask = 5
+speed = 400.0
+
+[node name="StaticBody2D" type="StaticBody2D" parent="." unique_id=629473890]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D" unique_id=1872537355]
+position = Vector2(955, 996)
+shape = SubResource("RectangleShape2D_4kxuq")
+
+[node name="Skeleton_White" parent="." unique_id=190460209 instance=ExtResource("2_u1f2d")]
+position = Vector2(1064, 656)
+scale = Vector2(2.5, 2.5)
