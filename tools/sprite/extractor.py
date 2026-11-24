@@ -31,21 +31,58 @@ def make_checkerboard(width: int, height: int, tile: int = 8) -> Image.Image:
     return Image.fromarray(c_arr, mode="RGBA")
 
 
+def place_sprite_on_canvas(
+    sprite_rgba: Image.Image,
+    canvas_w: int,
+    canvas_h: int,
+    anchor: str = "bottom_center",
+    offset_x: int = 0,
+    offset_y: int = 0,
+) -> Image.Image:
+    """
+    Posiciona um sprite RGBA dentro de um canvas uniforme sem alterar a resolução
+    original do sprite, evitando tremores entre frames de dimensões variadas.
+    """
+    cw = max(1, canvas_w)
+    ch = max(1, canvas_h)
+    out = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+    sw, sh = sprite_rgba.size
+
+    if "left" in anchor:
+        px = 0
+    elif "right" in anchor:
+        px = cw - sw
+    else:
+        px = (cw - sw) // 2
+
+    if "top" in anchor:
+        py = 0
+    elif "bottom" in anchor:
+        py = ch - sh
+    else:
+        py = (ch - sh) // 2
+
+    px += int(offset_x)
+    py += int(offset_y)
+    out.paste(sprite_rgba, (px, py), sprite_rgba)
+    return out
+
+
 class AnimationAssemblerWindow:
     """Janela de montagem, reordenação, pré-visualização e exportação de animações."""
 
     SUPPORTED_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif")
 
-    def __init__(self, parent: tk.Tk, parse_hex_fn) -> None:
+    def __init__(self, parent: tk.Tk, parse_hex_fn, extractor_ref: "SpriteExtractorApp | None" = None) -> None:
         self.parent = parent
         self._parse_hex_color = parse_hex_fn
+        self.extractor_ref = extractor_ref
 
         self.win = tk.Toplevel(parent)
         self.win.title("Montador e Pré-Visualizador de Animação (Godot)")
-        self.win.geometry("1120x680")
-        self.win.minsize(920, 560)
+        self.win.geometry("1160x720")
+        self.win.minsize(940, 580)
 
-        # Lista de dicts: {"path": str, "name": str, "image": Image.Image}
         self.frames: list[dict[str, object]] = []
         self.current_idx: int = 0
         self.is_playing: bool = False
@@ -54,18 +91,15 @@ class AnimationAssemblerWindow:
 
         self._build_ui()
         self._update_bg_controls()
+        self._update_uniform_canvas_controls()
         self._refresh_frame_list(preserve_selection=False)
         self._render_current_frame()
         self.win.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # -------------------------------------------------------------------------
-    # Interface em 3 Áreas
-    # -------------------------------------------------------------------------
     def _build_ui(self) -> None:
         root_pane = ttk.PanedWindow(self.win, orient=tk.HORIZONTAL)
         root_pane.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-        # Área 1: Lista de frames importados
         left_panel = ttk.LabelFrame(root_pane, text="1. Frames da Animação", padding=8)
         root_pane.add(left_panel, weight=1)
 
@@ -78,9 +112,20 @@ class AnimationAssemblerWindow:
             side=tk.LEFT, fill=tk.X, expand=True
         )
 
+        sheet_row = ttk.Frame(left_panel)
+        sheet_row.pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(sheet_row, text="Importar Moldura Atual", command=self.import_selected_from_extractor).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4)
+        )
+        ttk.Button(sheet_row, text="Importar Todas Molduras", command=self.import_all_from_extractor).pack(
+            side=tk.LEFT, fill=tk.X, expand=True
+        )
+
         ord_row = ttk.Frame(left_panel)
         ord_row.pack(fill=tk.X, pady=(0, 6))
-        ttk.Button(ord_row, text="Subir ▲", command=self.move_frame_up).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        ttk.Button(ord_row, text="Subir ▲", command=self.move_frame_up).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4)
+        )
         ttk.Button(ord_row, text="Descer ▼", command=self.move_frame_down).pack(
             side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4)
         )
@@ -98,7 +143,6 @@ class AnimationAssemblerWindow:
 
         ttk.Button(left_panel, text="Limpar Lista", command=self.clear_frames).pack(fill=tk.X, pady=(6, 0))
 
-        # Área 2: Preview da animação
         center_panel = ttk.LabelFrame(root_pane, text="2. Pré-Visualização da Animação", padding=8)
         root_pane.add(center_panel, weight=3)
 
@@ -115,7 +159,6 @@ class AnimationAssemblerWindow:
         self.frame_meta_var = tk.StringVar(value="Nenhum frame carregado.")
         ttk.Label(status_bar, textvariable=self.frame_meta_var).pack(side=tk.RIGHT)
 
-        # Área 3: Configurações, reprodução e exportação
         right_panel = ttk.Frame(root_pane, padding=4)
         root_pane.add(right_panel, weight=1)
 
@@ -174,6 +217,43 @@ class AnimationAssemblerWindow:
         self.loop_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(cfg_box, text="Reproduzir em loop", variable=self.loop_var).pack(anchor=tk.W)
 
+        self.uniform_canvas_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            cfg_box,
+            text="Canvas uniforme (evita tremor)",
+            variable=self.uniform_canvas_var,
+            command=self._update_uniform_canvas_controls,
+        ).pack(anchor=tk.W, pady=(4, 0))
+
+        self.align_frame = ttk.Frame(cfg_box)
+        self.align_frame.pack(fill=tk.X, pady=(2, 4))
+
+        ttk.Label(self.align_frame, text="Alinhamento:").pack(side=tk.LEFT)
+        self.align_var = tk.StringVar(value="bottom_center")
+        self.align_combo = ttk.Combobox(
+            self.align_frame,
+            textvariable=self.align_var,
+            state="readonly",
+            width=15,
+            values=["bottom_center", "center", "top_center", "bottom_left", "bottom_right"],
+        )
+        self.align_combo.pack(side=tk.LEFT, padx=(4, 0))
+        self.align_combo.bind("<<ComboboxSelected>>", lambda _e: self._render_current_frame())
+
+        offset_row = ttk.Frame(self.align_frame)
+        offset_row.pack(fill=tk.X, pady=(4, 0))
+        ttk.Label(offset_row, text="Offset X/Y:").pack(side=tk.LEFT)
+        self.offset_x_var = tk.IntVar(value=0)
+        self.offset_y_var = tk.IntVar(value=0)
+        self.ox_spin = ttk.Spinbox(
+            offset_row, from_=-500, to=500, textvariable=self.offset_x_var, width=6, command=self._render_current_frame
+        )
+        self.ox_spin.pack(side=tk.LEFT, padx=(4, 4))
+        self.oy_spin = ttk.Spinbox(
+            offset_row, from_=-500, to=500, textvariable=self.offset_y_var, width=6, command=self._render_current_frame
+        )
+        self.oy_spin.pack(side=tk.LEFT)
+
         ttk.Label(cfg_box, text="Fundo do Preview:").pack(anchor=tk.W, pady=(6, 2))
         self.preview_bg_mode_var = tk.StringVar(value="checker")
         bg_modes = ttk.Frame(cfg_box)
@@ -212,12 +292,21 @@ class AnimationAssemblerWindow:
         ttk.Button(exp_box, text="Exportar Sequência Ordenada...", command=self.export_sequence).pack(
             fill=tk.X, pady=(0, 4)
         )
-        ttk.Button(exp_box, text="Exportar Spritesheet Horizontal...", command=lambda: self.export_sheet("horizontal")).pack(
-            fill=tk.X, pady=(0, 4)
-        )
-        ttk.Button(exp_box, text="Exportar Spritesheet Vertical...", command=lambda: self.export_sheet("vertical")).pack(
-            fill=tk.X
-        )
+        ttk.Button(
+            exp_box, text="Exportar Spritesheet Horizontal...", command=lambda: self.export_sheet("horizontal")
+        ).pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(
+            exp_box, text="Exportar Spritesheet Vertical...", command=lambda: self.export_sheet("vertical")
+        ).pack(fill=tk.X)
+
+    def _update_uniform_canvas_controls(self) -> None:
+        enabled = bool(self.uniform_canvas_var.get())
+        state = "readonly" if enabled else tk.DISABLED
+        self.align_combo.configure(state=state)
+        n_state = tk.NORMAL if enabled else tk.DISABLED
+        self.ox_spin.configure(state=n_state)
+        self.oy_spin.configure(state=n_state)
+        self._render_current_frame()
 
     def _update_bg_controls(self) -> None:
         is_solid = self.preview_bg_mode_var.get() == "solid"
@@ -240,9 +329,6 @@ class AnimationAssemblerWindow:
         if chosen and chosen[1]:
             self.preview_bg_hex_var.set(chosen[1].lower())
 
-    # -------------------------------------------------------------------------
-    # Importação e Reordenação (Sem Alterar Arquivos Originais)
-    # -------------------------------------------------------------------------
     def _load_frame_items(self, paths: list[str]) -> tuple[int, list[str]]:
         loaded = 0
         errors: list[str] = []
@@ -250,11 +336,81 @@ class AnimationAssemblerWindow:
             try:
                 with Image.open(path) as raw:
                     rgba = raw.convert("RGBA").copy()
-                self.frames.append({"path": path, "name": os.path.basename(path), "image": rgba})
+                self.frames.append(
+                    {
+                        "path": path,
+                        "name": os.path.basename(path),
+                        "image": rgba,
+                        "rect": None,
+                        "source_image": None,
+                    }
+                )
                 loaded += 1
             except Exception as exc:
                 errors.append(f"{os.path.basename(path)}: {exc}")
         return loaded, errors
+
+    def import_frames_from_extractor_rects(self, indices: list[int]) -> None:
+        if self.extractor_ref is None:
+            messagebox.showwarning("Aviso", "Extrator não vinculado.", parent=self.win)
+            return
+
+        source_pil = self.extractor_ref.pil_image
+        if source_pil is None:
+            messagebox.showwarning("Aviso", "Nenhum spritesheet aberto no extrator.", parent=self.win)
+            return
+
+        iw, ih = source_pil.size
+        src_name = os.path.basename(self.extractor_ref.image_path) if self.extractor_ref.image_path else "spritesheet"
+        bg_mode = self.extractor_ref.bg_mode_var.get()
+        tol = int(self.extractor_ref.bg_tol_var.get())
+
+        added = 0
+        errors: list[str] = []
+        for idx in indices:
+            if not (0 <= idx < len(self.extractor_ref.rects)):
+                continue
+            rect = list(self.extractor_ref.rects[idx])
+            x1, y1, x2, y2 = rect
+            if x2 <= x1 or y2 <= y1 or x1 < 0 or y1 < 0 or x2 > iw or y2 > ih:
+                errors.append(f"Moldura #{idx + 1} fora dos limites da imagem ({rect}).")
+                continue
+            try:
+                sprite_rgba = self.extractor_ref._extract_sprite_rgba(rect, bg_mode=bg_mode, tol=tol)
+                self.frames.append(
+                    {
+                        "path": self.extractor_ref.image_path or "",
+                        "name": f"{src_name}_m{idx + 1:03d}.png",
+                        "image": sprite_rgba,
+                        "rect": rect,
+                        "source_image": source_pil,
+                    }
+                )
+                added += 1
+            except Exception as exc:
+                errors.append(f"Moldura #{idx + 1}: {exc}")
+
+        if added > 0 and self.current_idx >= len(self.frames):
+            self.current_idx = 0
+        self._refresh_frame_list(preserve_selection=True)
+        self._render_current_frame()
+
+        if errors:
+            messagebox.showwarning("Algumas molduras falharam", "\n".join(errors[:8]), parent=self.win)
+        elif added == 0:
+            messagebox.showinfo("Aviso", "Nenhuma moldura válida foi importada.", parent=self.win)
+
+    def import_selected_from_extractor(self) -> None:
+        if self.extractor_ref is None or self.extractor_ref.selected_idx is None:
+            messagebox.showwarning("Aviso", "Selecione uma moldura no extrator antes de importar.", parent=self.win)
+            return
+        self.import_frames_from_extractor_rects([self.extractor_ref.selected_idx])
+
+    def import_all_from_extractor(self) -> None:
+        if self.extractor_ref is None or not self.extractor_ref.rects:
+            messagebox.showwarning("Aviso", "Não há molduras detectadas ou criadas no extrator.", parent=self.win)
+            return
+        self.import_frames_from_extractor_rects(list(range(len(self.extractor_ref.rects))))
 
     def import_files(self) -> None:
         paths = filedialog.askopenfilenames(
@@ -273,7 +429,9 @@ class AnimationAssemblerWindow:
         self._refresh_frame_list(preserve_selection=True)
         self._render_current_frame()
         if errors:
-            messagebox.showwarning("Arquivos ignorados", "Alguns arquivos não puderam ser carregados:\n" + "\n".join(errors[:8]), parent=self.win)
+            messagebox.showwarning(
+                "Arquivos ignorados", "Alguns arquivos não puderam ser carregados:\n" + "\n".join(errors[:8]), parent=self.win
+            )
 
     def import_folder(self) -> None:
         folder = filedialog.askdirectory(title="Selecionar Pasta com Frames", parent=self.win)
@@ -299,13 +457,16 @@ class AnimationAssemblerWindow:
         self._refresh_frame_list(preserve_selection=True)
         self._render_current_frame()
         if errors:
-            messagebox.showwarning("Arquivos ignorados", "Alguns arquivos não puderam ser carregados:\n" + "\n".join(errors[:8]), parent=self.win)
+            messagebox.showwarning(
+                "Arquivos ignorados", "Alguns arquivos não puderam ser carregados:\n" + "\n".join(errors[:8]), parent=self.win
+            )
 
     def _refresh_frame_list(self, preserve_selection: bool = True) -> None:
         self.frame_listbox.delete(0, tk.END)
         for idx, item in enumerate(self.frames, start=1):
             w, h = item["image"].size
-            self.frame_listbox.insert(tk.END, f"{idx:03d} | {item['name']} ({w}x{h})")
+            rect_tag = f" @{item['rect']}" if item.get("rect") else ""
+            self.frame_listbox.insert(tk.END, f"{idx:03d} | {item['name']} ({w}x{h}){rect_tag}")
 
         if not self.frames:
             self.current_idx = 0
@@ -373,9 +534,6 @@ class AnimationAssemblerWindow:
         self._refresh_frame_list(preserve_selection=False)
         self._render_current_frame()
 
-    # -------------------------------------------------------------------------
-    # Controle de Reprodução e Renderização
-    # -------------------------------------------------------------------------
     def toggle_play(self) -> None:
         if not self.frames:
             messagebox.showwarning("Aviso", "Importe ao menos um frame para reproduzir.", parent=self.win)
@@ -449,19 +607,34 @@ class AnimationAssemblerWindow:
         self._render_current_frame()
         self._schedule_next_tick()
 
+    def _get_aligned_frame(self, idx: int) -> Image.Image:
+        src_rgba: Image.Image = self.frames[idx]["image"]
+        if not self.uniform_canvas_var.get() or len(self.frames) <= 1:
+            return src_rgba
+        max_w = max(item["image"].width for item in self.frames)
+        max_h = max(item["image"].height for item in self.frames)
+        return place_sprite_on_canvas(
+            src_rgba,
+            canvas_w=max_w,
+            canvas_h=max_h,
+            anchor=self.align_var.get(),
+            offset_x=int(self.offset_x_var.get()),
+            offset_y=int(self.offset_y_var.get()),
+        )
+
     def _render_current_frame(self) -> None:
         self.preview_canvas.delete("all")
         if not self.frames:
             return
 
         idx = max(0, min(self.current_idx, len(self.frames) - 1))
-        src_rgba: Image.Image = self.frames[idx]["image"]
+        frame_rgba = self._get_aligned_frame(idx)
         scale = max(0.25, min(12.0, float(self.scale_var.get())))
-        disp_w = max(1, int(round(src_rgba.width * scale)))
-        disp_h = max(1, int(round(src_rgba.height * scale)))
+        disp_w = max(1, int(round(frame_rgba.width * scale)))
+        disp_h = max(1, int(round(frame_rgba.height * scale)))
 
         resample = Image.Resampling.NEAREST if scale >= 1.5 else Image.Resampling.BILINEAR
-        scaled_rgba = src_rgba.resize((disp_w, disp_h), resample)
+        scaled_rgba = frame_rgba.resize((disp_w, disp_h), resample)
 
         if self.preview_bg_mode_var.get() == "solid":
             rgb = self._parse_hex_color(self.preview_bg_hex_var.get()) or (43, 48, 58)
@@ -476,9 +649,6 @@ class AnimationAssemblerWindow:
         ch = max(1, self.preview_canvas.winfo_height())
         self.preview_canvas.create_image(cw // 2, ch // 2, anchor=tk.CENTER, image=self._preview_photo)
 
-    # -------------------------------------------------------------------------
-    # Exportação de Sequência e Spritesheet
-    # -------------------------------------------------------------------------
     def export_sequence(self) -> None:
         if not self.frames:
             messagebox.showwarning("Aviso", "Não há frames para exportar.", parent=self.win)
@@ -488,13 +658,20 @@ class AnimationAssemblerWindow:
             return
         prefix = self.anim_prefix_var.get().strip() or "frame"
         try:
-            for i, item in enumerate(self.frames, start=1):
-                dest_path = os.path.join(out_dir, f"{prefix}_{i:03d}.png")
+            for i in range(len(self.frames)):
+                dest_path = os.path.join(out_dir, f"{prefix}_{i + 1:03d}.png")
+                item = self.frames[i]
                 src_path = item["path"]
-                if os.path.exists(src_path) and src_path.lower().endswith(".png"):
+                if (
+                    not self.uniform_canvas_var.get()
+                    and item.get("rect") is None
+                    and src_path
+                    and os.path.exists(src_path)
+                    and src_path.lower().endswith(".png")
+                ):
                     shutil.copy2(src_path, dest_path)
                 else:
-                    item["image"].save(dest_path, format="PNG")
+                    self._get_aligned_frame(i).save(dest_path, format="PNG")
         except Exception as exc:
             messagebox.showerror("Erro na exportação", f"Falha ao exportar sequência:\n{exc}", parent=self.win)
             return
@@ -514,7 +691,7 @@ class AnimationAssemblerWindow:
         if not out_path:
             return
 
-        imgs: list[Image.Image] = [item["image"] for item in self.frames]
+        imgs: list[Image.Image] = [self._get_aligned_frame(i) for i in range(len(self.frames))]
         if orientation == "horizontal":
             total_w = sum(im.width for im in imgs)
             total_h = max(im.height for im in imgs)
@@ -548,13 +725,14 @@ class SpriteExtractorApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Extrator Automático de Spritesheets (2D)")
-        self.root.geometry("1360x840")
-        self.root.minsize(1024, 640)
+        self.root.geometry("1380x860")
+        self.root.minsize(1040, 640)
 
-        # Estado da imagem e dos retângulos [x1, y1, x2, y2] em coordenadas originais
         self.image_path: str | None = None
         self.pil_image: Image.Image | None = None
         self.cv_bgr: np.ndarray | None = None
+        self.last_mask: np.ndarray | None = None
+        self.last_diagnostic: dict[str, object] = {}
 
         self.rects: list[list[int]] = []
         self.selected_idx: int | None = None
@@ -562,16 +740,14 @@ class SpriteExtractorApp:
         self._paste_offset_step: int = 0
         self._anim_window: AnimationAssemblerWindow | None = None
 
-        # Estado de visualização (zoom e pan)
         self.zoom: float = 1.0
         self.min_zoom: float = 0.15
         self.max_zoom: float = 12.0
         self.pan_x: float = 0.0
         self.pan_y: float = 0.0
 
-        # Interação do mouse no canvas
-        self.drag_mode: str | None = None  # "pan", "create", "move", "resize", "eyedropper"
-        self.resize_edge: str | None = None  # "nw", "ne", "sw", "se", "n", "s", "w", "e"
+        self.drag_mode: str | None = None
+        self.resize_edge: str | None = None
         self.drag_start_canvas: tuple[int, int] = (0, 0)
         self.drag_start_img: tuple[float, float] = (0.0, 0.0)
         self.original_rect_on_drag: list[int] | None = None
@@ -582,9 +758,6 @@ class SpriteExtractorApp:
         self._build_ui()
         self._bind_events()
 
-    # -------------------------------------------------------------------------
-    # Interface Gráfica
-    # -------------------------------------------------------------------------
     def _build_ui(self) -> None:
         top_bar = ttk.Frame(self.root, padding=6)
         top_bar.pack(side=tk.TOP, fill=tk.X)
@@ -612,31 +785,74 @@ class SpriteExtractorApp:
         self.canvas = tk.Canvas(canvas_frame, bg="#181c24", highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
-        side_panel = ttk.Frame(main_pane, width=355, padding=6)
+        side_panel = ttk.Frame(main_pane, width=370, padding=6)
         main_pane.add(side_panel, weight=1)
 
-        det_box = ttk.LabelFrame(side_panel, text="1. Parâmetros de Detecção", padding=8)
+        # 1. Detecção Automática
+        det_box = ttk.LabelFrame(side_panel, text="1. Detecção Automática", padding=8)
         det_box.pack(fill=tk.X, pady=(0, 8))
 
-        ttk.Label(det_box, text="Sensibilidade de Cor (Azul-Claro):").pack(anchor=tk.W)
+        method_row = ttk.Frame(det_box)
+        method_row.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(method_row, text="Método:").pack(side=tk.LEFT)
+        self.detect_mode_var = tk.StringVar(value="auto")
+        ttk.Combobox(
+            method_row,
+            textvariable=self.detect_mode_var,
+            state="readonly",
+            width=16,
+            values=["auto", "alpha", "color"],
+        ).pack(side=tk.RIGHT)
+
+        ttk.Label(det_box, text="Limite de Alfa (0-254):").pack(anchor=tk.W)
+        self.alpha_thresh_var = tk.IntVar(value=8)
+        ttk.Scale(det_box, from_=0, to=254, variable=self.alpha_thresh_var, orient=tk.HORIZONTAL).pack(fill=tk.X)
+
+        ttk.Label(det_box, text="Sensibilidade de Cor / Fundo:").pack(anchor=tk.W, pady=(4, 0))
         self.color_tol_var = tk.IntVar(value=32)
         ttk.Scale(det_box, from_=8, to=90, variable=self.color_tol_var, orient=tk.HORIZONTAL).pack(fill=tk.X)
 
-        ttk.Label(det_box, text="Área Mínima (px²):").pack(anchor=tk.W, pady=(4, 0))
-        self.min_area_var = tk.IntVar(value=120)
-        ttk.Spinbox(det_box, from_=10, to=50000, increment=20, textvariable=self.min_area_var, width=10).pack(anchor=tk.W)
+        sep_row = ttk.Frame(det_box)
+        sep_row.pack(fill=tk.X, pady=(4, 0))
+        ttk.Label(sep_row, text="Fechamento Interno (px):").pack(side=tk.LEFT)
+        self.sep_kernel_var = tk.IntVar(value=1)
+        ttk.Spinbox(sep_row, from_=1, to=9, increment=2, textvariable=self.sep_kernel_var, width=6).pack(side=tk.RIGHT)
 
-        ttk.Label(det_box, text="Margem de Expansão (px):").pack(anchor=tk.W, pady=(4, 0))
+        area_row = ttk.Frame(det_box)
+        area_row.pack(fill=tk.X, pady=(4, 0))
+        ttk.Label(area_row, text="Área Mínima Base (px²):").pack(side=tk.LEFT)
+        self.min_area_var = tk.IntVar(value=48)
+        ttk.Spinbox(area_row, from_=4, to=50000, increment=8, textvariable=self.min_area_var, width=8).pack(
+            side=tk.RIGHT
+        )
+
+        pad_row = ttk.Frame(det_box)
+        pad_row.pack(fill=tk.X, pady=(4, 0))
+        ttk.Label(pad_row, text="Margem Expansão (px):").pack(side=tk.LEFT)
         self.pad_var = tk.IntVar(value=0)
-        ttk.Spinbox(det_box, from_=-10, to=20, increment=1, textvariable=self.pad_var, width=10).pack(anchor=tk.W)
+        ttk.Spinbox(pad_row, from_=-10, to=20, increment=1, textvariable=self.pad_var, width=8).pack(side=tk.RIGHT)
 
         self.split_adj_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             det_box,
-            text="Tentar dividir blocos largos adjacentes",
+            text="Dividir blocos largos adjacentes",
             variable=self.split_adj_var,
-        ).pack(anchor=tk.W, pady=(6, 0))
+        ).pack(anchor=tk.W, pady=(4, 0))
 
+        self.show_mask_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            det_box,
+            text="Visualizar máscara de detecção",
+            variable=self.show_mask_var,
+            command=self._on_toggle_mask,
+        ).pack(anchor=tk.W)
+
+        self.diag_var = tk.StringVar(value="Diagnóstico: aguardando detecção.")
+        ttk.Label(det_box, textvariable=self.diag_var, wraplength=340, justify=tk.LEFT).pack(
+            anchor=tk.W, pady=(4, 0)
+        )
+
+        # 2. Edição Manual e Lista
         edit_box = ttk.LabelFrame(side_panel, text="2. Retângulos & Correção Manual", padding=8)
         edit_box.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
@@ -673,6 +889,7 @@ class SpriteExtractorApp:
         self.rect_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # 3. Remoção de Fundo e Exportação
         exp_box = ttk.LabelFrame(side_panel, text="3. Remoção de Fundo & Exportação", padding=8)
         exp_box.pack(fill=tk.X)
 
@@ -738,12 +955,18 @@ class SpriteExtractorApp:
 
         self._update_bg_ui_state()
 
+    def _on_toggle_mask(self) -> None:
+        if self.show_mask_var.get() and self.last_mask is None and self.pil_image is not None:
+            self.last_mask = self._build_detection_mask()
+        self.redraw()
+
     def open_animation_assembler(self) -> None:
         if self._anim_window is not None and self._anim_window.win.winfo_exists():
+            self._anim_window.extractor_ref = self
             self._anim_window.win.lift()
             self._anim_window.win.focus_force()
             return
-        self._anim_window = AnimationAssemblerWindow(self.root, self._parse_hex_color)
+        self._anim_window = AnimationAssemblerWindow(self.root, self._parse_hex_color, extractor_ref=self)
 
     def _sync_swatch_color(self) -> None:
         rgb = self._parse_hex_color(self.chroma_color_var.get())
@@ -821,9 +1044,6 @@ class SpriteExtractorApp:
         self.paste_copied_rect()
         return "break"
 
-    # -------------------------------------------------------------------------
-    # Coordenadas (Imagem <-> Canvas)
-    # -------------------------------------------------------------------------
     def img_to_canvas(self, ix: float, iy: float) -> tuple[float, float]:
         return ix * self.zoom + self.pan_x, iy * self.zoom + self.pan_y
 
@@ -874,7 +1094,7 @@ class SpriteExtractorApp:
         self.redraw()
 
     # -------------------------------------------------------------------------
-    # Abertura e Detecção Automática
+    # Abertura e Detecção Adaptativa (Alfa, Cor/Fundo, Barras e Diagnóstico)
     # -------------------------------------------------------------------------
     def open_image(self) -> None:
         path = filedialog.askopenfilename(
@@ -888,14 +1108,16 @@ class SpriteExtractorApp:
             return
 
         try:
-            pil_img = Image.open(path).convert("RGB")
+            pil_img = Image.open(path).convert("RGBA")
         except Exception as exc:
             messagebox.showerror("Erro ao abrir", f"Não foi possível carregar a imagem:\n{exc}")
             return
 
         self.image_path = path
         self.pil_image = pil_img
-        self.cv_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        arr_rgba = np.array(pil_img, dtype=np.uint8)
+        self.cv_bgr = cv2.cvtColor(arr_rgba[:, :, :3], cv2.COLOR_RGB2BGR)
+        self.last_mask = None
         self.rects = []
         self.selected_idx = None
         self.copied_rect = None
@@ -906,74 +1128,268 @@ class SpriteExtractorApp:
             self.prefix_var.set(base_name)
 
         self.reset_view()
-        self.info_var.set(f"{os.path.basename(path)} ({pil_img.width}x{pil_img.height}px)")
+        has_alpha = self._has_meaningful_alpha(arr_rgba)
+        alpha_tag = "RGBA (com transparência)" if has_alpha else "RGBA (sem alfa útil)"
+        self.info_var.set(f"{os.path.basename(path)} ({pil_img.width}x{pil_img.height}px • {alpha_tag})")
         self.detect_sprites()
 
-    def _estimate_light_blue_mask(self, tolerance: int) -> np.ndarray:
+    @staticmethod
+    def _has_meaningful_alpha(arr_rgba: np.ndarray) -> bool:
+        if arr_rgba.shape[2] < 4:
+            return False
+        alpha = arr_rgba[:, :, 3]
+        return bool(np.any(alpha == 0) and np.any(alpha > 10))
+
+    def _build_alpha_mask(self, alpha_threshold: int, sep_size: int) -> np.ndarray:
+        """
+        Gera máscara a partir do canal alfa preservando bordas suavizadas
+        (semitransparentes) e evitando fechar espaços entre sprites vizinhos.
+        """
+        assert self.pil_image is not None
+        alpha = np.array(self.pil_image, dtype=np.uint8)[:, :, 3]
+        # Bordas suaves geralmente têm alfa > 0; usa limite baixo para não cortar bordas/barras finas
+        thresh = max(1, min(254, int(alpha_threshold)))
+        mask = np.where(alpha >= thresh, 255, 0).astype(np.uint8)
+
+        # Só aplica fechamento suave se o usuário pedir explicitamente > 1 px
+        k = int(sep_size)
+        if k >= 3:
+            k_odd = k if k % 2 == 1 else k + 1
+            k_odd = min(7, k_odd)
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k_odd, k_odd))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        return mask
+
+    def _estimate_light_blue_mask(self, tolerance: int, sep_size: int = 1) -> np.ndarray:
+        """
+        Estima máscara de primeiro plano para imagens com fundo sólido (azul-claro ou
+        cor dominante nas bordas) quando não há alfa útil ou quando 'color' é escolhido.
+        """
         assert self.cv_bgr is not None
+        h_img, w_img, _ = self.cv_bgr.shape
         hsv = cv2.cvtColor(self.cv_bgr, cv2.COLOR_BGR2HSV).astype(np.int32)
         h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
 
         blue_candidates = (h >= 85) & (h <= 130) & (s >= 20) & (v >= 120)
-        if np.any(blue_candidates):
+        blue_ratio = float(np.mean(blue_candidates))
+
+        if blue_ratio >= 0.15:
             med_h = float(np.median(h[blue_candidates]))
             med_s = float(np.median(s[blue_candidates]))
             med_v = float(np.median(v[blue_candidates]))
+            bg_is_fg = (
+                (np.abs(h - med_h) <= max(10, tolerance // 2))
+                & (np.abs(s - med_s) <= tolerance + 25)
+                & (np.abs(v - med_v) <= tolerance + 35)
+                & (v >= max(110, int(med_v) - tolerance - 30))
+            )
+            fg_mask = np.where(~bg_is_fg, 255, 0).astype(np.uint8)
         else:
-            med_h, med_s, med_v = 108.0, 75.0, 215.0
+            # Fundo sólido genérico amostrado pelas bordas da imagem
+            border = np.concatenate(
+                [
+                    self.cv_bgr[0:1, :, :].reshape(-1, 3),
+                    self.cv_bgr[h_img - 1 : h_img, :, :].reshape(-1, 3),
+                    self.cv_bgr[:, 0:1, :].reshape(-1, 3),
+                    self.cv_bgr[:, w_img - 1 : w_img, :].reshape(-1, 3),
+                ],
+                axis=0,
+            ).astype(np.int16)
+            bg_bgr = np.median(border, axis=0)
+            diff = np.max(np.abs(self.cv_bgr.astype(np.int16) - bg_bgr), axis=2)
+            fg_mask = np.where(diff > max(8, tolerance), 255, 0).astype(np.uint8)
 
-        dh = np.abs(h - med_h)
-        ds = np.abs(s - med_s)
-        dv = np.abs(v - med_v)
+        k = int(sep_size)
+        if k >= 3:
+            k_odd = min(7, k if k % 2 == 1 else k + 1)
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k_odd, k_odd))
+            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        return fg_mask
 
-        mask = (
-            (dh <= max(10, tolerance // 2))
-            & (ds <= tolerance + 25)
-            & (dv <= tolerance + 35)
-            & (v >= max(110, int(med_v) - tolerance - 30))
-        ).astype(np.uint8) * 255
+    def _build_detection_mask(self) -> np.ndarray:
+        assert self.pil_image is not None
+        mode = self.detect_mode_var.get()
+        alpha_thresh = int(self.alpha_thresh_var.get())
+        tol = int(self.color_tol_var.get())
+        sep_size = max(1, int(self.sep_kernel_var.get()))
 
-        kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close, iterations=1)
-        return mask
+        if mode == "alpha":
+            return self._build_alpha_mask(alpha_thresh, sep_size)
+        if mode == "color":
+            return self._estimate_light_blue_mask(tol, sep_size)
+
+        # Modo 'auto': utiliza canal alfa quando houver transparência útil
+        arr_rgba = np.array(self.pil_image, dtype=np.uint8)
+        if self._has_meaningful_alpha(arr_rgba):
+            return self._build_alpha_mask(alpha_thresh, sep_size)
+        return self._estimate_light_blue_mask(tol, sep_size)
+
+    def _is_valid_component(
+        self,
+        w: int,
+        h: int,
+        area: int,
+        iw: int,
+        ih: int,
+        base_min_area: int,
+    ) -> tuple[bool, str]:
+        """
+        Avalia adaptativamente se um componente conectado é um sprite válido ou ruído,
+        preservando barras finas horizontais/verticais e elementos alongados.
+        """
+        if w <= 0 or h <= 0 or area <= 0:
+            return False, "vazio"
+        if w > iw * 0.96 and h > ih * 0.96:
+            return False, "imagem_inteira"
+
+        bbox_area = max(1, w * h)
+        fill_ratio = area / float(bbox_area)
+        aspect = max(w / float(h), h / float(w))
+        is_elongated_bar = (aspect >= 2.5 and min(w, h) >= 2 and max(w, h) >= 12)
+
+        # Ruído pontual: 1x1 ou área minúscula com baixa densidade
+        if area < 6 and not is_elongated_bar:
+            return False, "ruido_pequeno"
+
+        # Para barras finas alongadas (ex.: barras de vida/energia), o limite de área é mais flexível
+        if is_elongated_bar:
+            eff_min_area = max(8, min(base_min_area, base_min_area // 3))
+            if area < eff_min_area:
+                return False, "barra_area_baixa"
+            if fill_ratio < 0.12:
+                return False, "barra_esparsa"
+            return True, "ok"
+
+        # Elementos compactos/convencionais
+        if w < 4 or h < 4:
+            return False, "dimensao_minima"
+        if area < base_min_area:
+            return False, "area_abaixo_minima"
+        return True, "ok"
+
+    def _split_touching_bars_in_rect(
+        self, x1: int, y1: int, x2: int, y2: int, mask: np.ndarray
+    ) -> list[list[int]]:
+        """
+        Se um componente contiver múltiplas barras empilhadas verticalmente ou alinhadas
+        horizontalmente separadas por linhas/colunas vazias na máscara, separa cada uma.
+        """
+        sub = (mask[y1:y2, x1:x2] > 0).astype(np.uint8)
+        sh, sw = sub.shape
+        if sh < 6 or sw < 6:
+            return [[x1, y1, x2, y2]]
+
+        row_occ = np.sum(sub, axis=1)
+        # Procura faixas horizontais de pixels ativos separadas por linhas totalmente vazias
+        active_rows = row_occ > 0
+        if np.all(active_rows) or not np.any(active_rows):
+            return [[x1, y1, x2, y2]]
+
+        bands: list[tuple[int, int]] = []
+        in_band = False
+        start_r = 0
+        for r in range(sh):
+            if active_rows[r] and not in_band:
+                in_band = True
+                start_r = r
+            elif not active_rows[r] and in_band:
+                in_band = False
+                if r - start_r >= 2:
+                    bands.append((start_r, r))
+        if in_band and sh - start_r >= 2:
+            bands.append((start_r, sh))
+
+        if len(bands) <= 1:
+            return [[x1, y1, x2, y2]]
+
+        split_rects: list[list[int]] = []
+        for r0, r1 in bands:
+            band_sub = sub[r0:r1, :]
+            cols = np.where(np.sum(band_sub, axis=0) > 0)[0]
+            if len(cols) >= 2:
+                cx1 = x1 + int(cols[0])
+                cx2 = x1 + int(cols[-1]) + 1
+                split_rects.append([cx1, y1 + r0, cx2, y1 + r1])
+        return split_rects if len(split_rects) > 1 else [[x1, y1, x2, y2]]
+
+    def _find_component_rects(
+        self, mask: np.ndarray, min_area: int, pad: int
+    ) -> tuple[list[list[int]], dict[str, int]]:
+        """Extrai retângulos delimitadores via componentes conectados e registra diagnóstico."""
+        assert self.pil_image is not None
+        iw, ih = self.pil_image.size
+        num_labels, _labels, stats, _centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+
+        reasons: dict[str, int] = {}
+        raw_rects: list[list[int]] = []
+        total_components = max(0, num_labels - 1)
+
+        for label_id in range(1, num_labels):
+            x = int(stats[label_id, cv2.CC_STAT_LEFT])
+            y = int(stats[label_id, cv2.CC_STAT_TOP])
+            w = int(stats[label_id, cv2.CC_STAT_WIDTH])
+            h = int(stats[label_id, cv2.CC_STAT_HEIGHT])
+            area = int(stats[label_id, cv2.CC_STAT_AREA])
+
+            valid, reason = self._is_valid_component(w, h, area, iw, ih, min_area)
+            if not valid:
+                reasons[reason] = reasons.get(reason, 0) + 1
+                continue
+
+            sub_rects = self._split_touching_bars_in_rect(x, y, x + w, y + h, mask)
+            for sx1, sy1, sx2, sy2 in sub_rects:
+                rx1 = max(0, sx1 - pad)
+                ry1 = max(0, sy1 - pad)
+                rx2 = min(iw, sx2 + pad)
+                ry2 = min(ih, sy2 + pad)
+                if rx2 > rx1 and ry2 > ry1:
+                    raw_rects.append([rx1, ry1, rx2, ry2])
+
+        diag = {
+            "components_found": total_components,
+            "discarded": sum(reasons.values()),
+            "reasons": reasons,
+        }
+        return raw_rects, diag
 
     def detect_sprites(self) -> None:
         if self.cv_bgr is None or self.pil_image is None:
             messagebox.showwarning("Aviso", "Abra uma imagem primeiro.")
             return
 
-        iw, ih = self.pil_image.size
-        tol = int(self.color_tol_var.get())
         min_area = int(self.min_area_var.get())
         pad = int(self.pad_var.get())
 
-        mask = self._estimate_light_blue_mask(tol)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        raw_rects: list[list[int]] = []
-        for cnt in contours:
-            x, y, w, h = cv2.boundingRect(cnt)
-            if w * h < min_area or w < 8 or h < 8:
-                continue
-            if w > iw * 0.95 and h > ih * 0.95:
-                continue
-
-            x1 = max(0, x - pad)
-            y1 = max(0, y - pad)
-            x2 = min(iw, x + w + pad)
-            y2 = min(ih, y + h + pad)
-            if x2 > x1 and y2 > y1:
-                raw_rects.append([x1, y1, x2, y2])
+        mask = self._build_detection_mask()
+        self.last_mask = mask
+        raw_rects, diag = self._find_component_rects(mask, min_area=min_area, pad=pad)
 
         if self.split_adj_var.get() and raw_rects:
             raw_rects = self._split_wide_strips(raw_rects, mask)
 
         self.rects = self._deduplicate_and_sort(raw_rects)
         self.selected_idx = 0 if self.rects else None
+
+        reasons_txt = ", ".join(f"{k}:{v}" for k, v in diag["reasons"].items()) if diag["reasons"] else "nenhum"
+        self.last_diagnostic = {
+            "componentes": diag["components_found"],
+            "descartados": diag["discarded"],
+            "detectados": len(self.rects),
+            "motivos": diag["reasons"],
+        }
+        self.diag_var.set(
+            f"Diagnóstico: {diag['components_found']} comp. | {diag['discarded']} descartados ({reasons_txt}) | "
+            f"{len(self.rects)} finais."
+        )
+
         self.refresh_listbox()
         self.redraw()
 
     def _split_wide_strips(self, rects: list[list[int]], mask: np.ndarray) -> list[list[int]]:
+        """
+        Divide faixas horizontais largas que contenham múltiplos sprites encostados,
+        procurando vales de baixa ocupação vertical da máscara.
+        """
         heights = [r[3] - r[1] for r in rects]
         if not heights:
             return rects
@@ -983,7 +1399,7 @@ class SpriteExtractorApp:
         for x1, y1, x2, y2 in rects:
             w = x2 - x1
             h = y2 - y1
-            if w > median_h * 1.6 and h <= median_h * 1.4:
+            if w > median_h * 1.5 and h <= median_h * 1.45:
                 sub_mask = (mask[y1:y2, x1:x2] > 0).astype(np.float32)
                 col_profile = np.mean(sub_mask, axis=0)
                 kernel = np.ones(5, dtype=np.float32) / 5.0
@@ -998,7 +1414,7 @@ class SpriteExtractorApp:
                     if win_end > win_start:
                         local_min_offset = int(np.argmin(smooth[win_start:win_end]))
                         split_x = x1 + win_start + local_min_offset
-                        if split_x - splits[-1] >= step * 0.6:
+                        if split_x - splits[-1] >= step * 0.55:
                             splits.append(split_x)
                             cur = split_x + step
                             continue
@@ -1007,7 +1423,7 @@ class SpriteExtractorApp:
 
                 for i in range(len(splits) - 1):
                     sx1, sx2 = splits[i], splits[i + 1]
-                    if sx2 - sx1 >= 10:
+                    if sx2 - sx1 >= 8:
                         result.append([sx1, y1, sx2, y2])
             else:
                 result.append([x1, y1, x2, y2])
@@ -1076,9 +1492,6 @@ class SpriteExtractorApp:
         self.refresh_listbox()
         self.redraw()
 
-    # -------------------------------------------------------------------------
-    # Copiar, Colar, Grade de Frames e Correções Manuais
-    # -------------------------------------------------------------------------
     def copy_selected_rect(self) -> None:
         if self.selected_idx is None or not (0 <= self.selected_idx < len(self.rects)):
             messagebox.showwarning("Aviso", "Selecione uma moldura para copiar.")
@@ -1172,6 +1585,7 @@ class SpriteExtractorApp:
         ).grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=(6, 10))
 
         def apply_grid() -> None:
+            assert self.pil_image is not None
             cols = max(1, int(cols_var.get()))
             rows = max(1, int(rows_var.get()))
             gap_x = int(gap_x_var.get())
@@ -1282,7 +1696,7 @@ class SpriteExtractorApp:
             self.canvas.configure(cursor="")
             px = max(0, min(iw - 1, int(ix)))
             py = max(0, min(ih - 1, int(iy)))
-            r, g, b = self.pil_image.getpixel((px, py))
+            r, g, b, _a = self.pil_image.getpixel((px, py))
             hex_col = f"#{r:02x}{g:02x}{b:02x}"
             self.chroma_color_var.set(hex_col)
             self.info_var.set(f"Cor capturada: {hex_col} (RGB {r},{g},{b}) em ({px},{py}).")
@@ -1393,9 +1807,6 @@ class SpriteExtractorApp:
         self.original_rect_on_drag = None
         self.redraw()
 
-    # -------------------------------------------------------------------------
-    # Renderização no Canvas
-    # -------------------------------------------------------------------------
     def redraw(self, temp_rect: list[int] | None = None) -> None:
         self.canvas.delete("all")
         if self.pil_image is None:
@@ -1403,7 +1814,6 @@ class SpriteExtractorApp:
 
         cw = max(self.canvas.winfo_width(), 1)
         ch = max(self.canvas.winfo_height(), 1)
-
         iw, ih = self.pil_image.size
 
         vis_x1 = max(0, int(math.floor((0 - self.pan_x) / self.zoom)))
@@ -1417,7 +1827,23 @@ class SpriteExtractorApp:
             out_h = max(1, int(round((vis_y2 - vis_y1) * self.zoom)))
             resample = Image.Resampling.NEAREST if self.zoom >= 2.0 else Image.Resampling.BILINEAR
             resized = crop.resize((out_w, out_h), resample)
-            self._photo_cache = ImageTk.PhotoImage(resized)
+
+            bg_checker = make_checkerboard(out_w, out_h, tile=8)
+            composed = Image.alpha_composite(bg_checker, resized)
+
+            if self.show_mask_var.get() and self.last_mask is not None:
+                m_crop = self.last_mask[vis_y1:vis_y2, vis_x1:vis_x2]
+                m_img = Image.fromarray(m_crop, mode="L").resize((out_w, out_h), Image.Resampling.NEAREST)
+                m_arr = np.array(m_img, dtype=np.uint8)
+                overlay_arr = np.zeros((out_h, out_w, 4), dtype=np.uint8)
+                active = m_arr > 0
+                overlay_arr[active, 0] = 0
+                overlay_arr[active, 1] = 220
+                overlay_arr[active, 2] = 255
+                overlay_arr[active, 3] = 110
+                composed = Image.alpha_composite(composed, Image.fromarray(overlay_arr, mode="RGBA"))
+
+            self._photo_cache = ImageTk.PhotoImage(composed)
             draw_x, draw_y = self.img_to_canvas(vis_x1, vis_y1)
             self.canvas.create_image(draw_x, draw_y, anchor=tk.NW, image=self._photo_cache)
 
@@ -1452,9 +1878,6 @@ class SpriteExtractorApp:
             sx2, sy2 = self.img_to_canvas(tx2, ty2)
             self.canvas.create_rectangle(sx1, sy1, sx2, sy2, outline="#00e5ff", width=2, dash=(4, 2))
 
-    # -------------------------------------------------------------------------
-    # Remoção de Fundo (Flood Fill / Chroma Key) e Exportação
-    # -------------------------------------------------------------------------
     def _extract_sprite_rgba(self, rect: list[int], bg_mode: str, tol: int) -> Image.Image:
         assert self.pil_image is not None
         x1, y1, x2, y2 = rect
@@ -1467,6 +1890,9 @@ class SpriteExtractorApp:
         h, w, _ = arr.shape
         if h == 0 or w == 0:
             return cropped
+
+        alpha_thresh = max(1, int(self.alpha_thresh_var.get()))
+        arr[arr[:, :, 3] < alpha_thresh, 3] = 0
 
         rgb = arr[:, :, :3].astype(np.int16)
 

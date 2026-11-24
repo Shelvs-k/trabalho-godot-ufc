@@ -94,6 +94,7 @@ func _physics_process(delta: float) -> void:
 			)
 
 	move_and_slide()
+	_verificar_jogador_na_hitbox()
 
 
 func _atualizar_movimento() -> void:
@@ -199,6 +200,14 @@ func _on_hitbox_area_entered(area: Area2D) -> void:
 
 	if alvo.has_method("receber_dano"):
 		alvo.receber_dano(dano, global_position)
+
+
+func _verificar_jogador_na_hitbox() -> void:
+	if not hitbox.monitoring or hitbox_shape.disabled:
+		return
+
+	for area in hitbox.get_overlapping_areas():
+		_on_hitbox_area_entered(area)
 
 
 func _on_hurtbox_area_entered(area: Area2D) -> void:

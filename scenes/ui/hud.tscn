@@ -1,7 +1,8 @@
 [gd_scene format=3 uid="uid://db17cqo18u7bm"]
 
-[ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1_hud"]
-[ext_resource type="AtlasTexture" uid="uid://qldtah12lgnl" path="res://sprites/environment/new_atlas_texture.tres" id="2_barra"]
+[ext_resource type="Script" uid="uid://cf6isxtdmkvn2" path="res://scripts/ui/hud.gd" id="1_hud"]
+[ext_resource type="Texture2D" uid="uid://bsiew42q4lwtk" path="res://sprites/environment/Health Bar/health_bar_002.png" id="2_bo48s"]
+[ext_resource type="Texture2D" uid="uid://iwgbha6ob5ku" path="res://sprites/environment/Health Bar/health_bar_001.png" id="3_8qguk"]
 
 [node name="HUD" type="CanvasLayer" unique_id=1667389072]
 script = ExtResource("1_hud")
@@ -9,24 +10,21 @@ script = ExtResource("1_hud")
 [node name="Interface" type="Control" parent="." unique_id=1043007268]
 layout_mode = 3
 anchors_preset = 0
-offset_right = 1920.0
-offset_bottom = 1080.0
-
-[node name="FundoBarraVida" type="ColorRect" parent="Interface"]
-offset_left = 32.0
-offset_top = 32.0
-offset_right = 168.0
-offset_bottom = 52.0
-color = Color(0.12, 0.12, 0.16, 0.9)
-mouse_filter = 2
+offset_left = 4.0
+offset_top = -2.0
+offset_right = 192.82849
+offset_bottom = 105.16758
+scale = Vector2(10.115, 10.115)
 
 [node name="BarraVida" type="TextureProgressBar" parent="Interface" unique_id=2141390181]
-layout_mode = 0
-offset_left = 32.0
-offset_top = 32.0
-offset_right = 168.0
-offset_bottom = 52.0
-max_value = 5.0
 texture_filter = 1
-texture_progress = ExtResource("2_barra")
+layout_mode = 0
+offset_left = 5.2397423
+offset_top = 5.042016
+offset_right = 39.239742
+offset_bottom = 10.042016
 mouse_filter = 2
+max_value = 5.0
+value = 5.0
+texture_under = ExtResource("2_bo48s")
+texture_progress = ExtResource("3_8qguk")
