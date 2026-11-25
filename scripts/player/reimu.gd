@@ -13,6 +13,7 @@ signal vida_atualizada(vida_atual: int, vida_maxima: int)
 @export var run_multiplier: float = 2.5
 @export var jump_velocity: float = -500.0
 @export_range(0.1, 1.0, 0.05) var jump_release_velocity_ratio: float = 0.5
+@export_range(0.0, 0.5, 0.01) var tempo_coyote: float = 0.12
 @export var dash_brake_rate: float = 2000.0
 
 # Vida
@@ -65,6 +66,7 @@ var invulneravel: bool = false
 var tempo_invulneravel: float = 0.0
 
 var freando_dash: bool = false
+var tempo_coyote_restante: float = 0.0
 var combo_pendente: bool = false
 var alvos_atingidos: Array[Node] = []
 var tempo_limite_acao: float = 0.0
@@ -93,6 +95,11 @@ func _physics_process(delta: float) -> void:
 	var direction = Input.get_axis("left", "right")
 	var correndo = Input.is_action_pressed("run") and direction != 0
 	_atualizar_watchdog_acao(delta)
+
+	if is_on_floor():
+		tempo_coyote_restante = tempo_coyote
+	else:
+		tempo_coyote_restante = maxf(tempo_coyote_restante - delta, 0.0)
 
 	# Invulnerabilidade
 	if invulneravel:
@@ -194,8 +201,11 @@ func _physics_process(delta: float) -> void:
 
 	# Pulo
 	if not atacando and not recebendo_hit:
-		if Input.is_action_just_pressed("jump") and is_on_floor():
+		if Input.is_action_just_pressed("jump") and (
+			is_on_floor() or tempo_coyote_restante > 0.0
+		):
 			velocity.y = jump_velocity
+			tempo_coyote_restante = 0.0
 			estadoAnimacao = EstadoAnim.JUMP_S
 
 	if Input.is_action_just_released("jump") and velocity.y < 0.0:

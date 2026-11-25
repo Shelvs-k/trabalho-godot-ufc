@@ -9,6 +9,7 @@ extends CharacterBody2D
 
 @export_group("Movimento")
 @export var velocidade: float = 100.0
+@export var distancia_deteccao: float = 500.0
 @export var distancia_ataque: float = 55.0
 @export var distancia_vertical_ataque: float = 100.0
 
@@ -105,6 +106,12 @@ func _atualizar_movimento() -> void:
 	if not is_instance_valid(jogador):
 		estado = Estado.IDLE
 		velocity.x = move_toward(velocity.x, 0.0, 500.0)
+		_tocar_animacao("idle")
+		return
+
+	if global_position.distance_to(jogador.global_position) > distancia_deteccao:
+		estado = Estado.IDLE
+		velocity.x = 0.0
 		_tocar_animacao("idle")
 		return
 
