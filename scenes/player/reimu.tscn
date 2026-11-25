@@ -26,14 +26,24 @@
 [ext_resource type="Texture2D" uid="uid://imxppv31y0is" path="res://sprites/player/attacks/attack 2/attack_2_012.png" id="24_wt2me"]
 [ext_resource type="Texture2D" uid="uid://cafi1g7vnk71t" path="res://sprites/player/attacks/attack 2/attack_2_013.png" id="25_fg447"]
 [ext_resource type="Texture2D" uid="uid://bk22ve8w8gy8p" path="res://sprites/player/attacks/attack air/attack_air_001.png" id="26_1saju"]
+[ext_resource type="Texture2D" uid="uid://bd2lf2rkx5rx6" path="res://sprites/player/attacks/attack 3/attack_3_001.png" id="26_lemm1"]
+[ext_resource type="Texture2D" uid="uid://h8skc3d3ei0o" path="res://sprites/player/attacks/attack 3/attack_3_002.png" id="27_gt34p"]
 [ext_resource type="Texture2D" uid="uid://dffynyrlgdwx5" path="res://sprites/player/attacks/attack air/attack_air_002.png" id="27_i21br"]
 [ext_resource type="Texture2D" uid="uid://bao1smrjwkr78" path="res://sprites/player/attacks/attack air/attack_air_003.png" id="28_6rasd"]
+[ext_resource type="Texture2D" uid="uid://1rw82b4xgol2" path="res://sprites/player/attacks/attack 3/attack_3_003.png" id="28_22ewg"]
+[ext_resource type="Texture2D" uid="uid://c8rf1npjc5ysc" path="res://sprites/player/attacks/attack 3/attack_3_004.png" id="29_8dnpr"]
 [ext_resource type="Texture2D" uid="uid://dj15ofn7cwqdi" path="res://sprites/player/attacks/attack air/attack_air_004.png" id="29_yar44"]
+[ext_resource type="Texture2D" uid="uid://dfysuai8clnmm" path="res://sprites/player/attacks/attack 3/attack_3_005.png" id="30_6ntet"]
 [ext_resource type="Texture2D" uid="uid://cdqw57h5tc64l" path="res://sprites/player/attacks/attack air/attack_air_005.png" id="30_gxd2y"]
 [ext_resource type="Texture2D" uid="uid://cdp5256hakoax" path="res://sprites/player/attacks/attack air/attack_air_006.png" id="31_klaqq"]
+[ext_resource type="Texture2D" uid="uid://c7i31l0w7al3q" path="res://sprites/player/attacks/attack 3/attack_3_006.png" id="31_wt2me"]
 [ext_resource type="Texture2D" uid="uid://0jd4stfkhb0x" path="res://sprites/player/attacks/attack air/attack_air_007.png" id="32_50sde"]
+[ext_resource type="Texture2D" uid="uid://cp40qe54or1qe" path="res://sprites/player/attacks/attack 3/attack_3_007.png" id="32_fg447"]
+[ext_resource type="Texture2D" uid="uid://di0usam8c6bfw" path="res://sprites/player/attacks/attack 3/attack_3_008.png" id="33_1saju"]
 [ext_resource type="Texture2D" uid="uid://bommudxpu30ko" path="res://sprites/player/attacks/attack air/attack_air_008.png" id="33_n0j7a"]
+[ext_resource type="Texture2D" uid="uid://dssobxj0dns75" path="res://sprites/player/attacks/attack 3/attack_3_009.png" id="34_i21br"]
 [ext_resource type="Texture2D" uid="uid://debfyywp4wuc7" path="res://sprites/player/attacks/attack air/attack_air_009.png" id="34_pqdx4"]
+[ext_resource type="Texture2D" uid="uid://chytw6mki02f1" path="res://sprites/player/attacks/attack 3/attack_3_010.png" id="35_6rasd"]
 [ext_resource type="Texture2D" uid="uid://cyi157xfps4rw" path="res://sprites/player/attacks/attack air/attack_air_010.png" id="35_8fcxs"]
 [ext_resource type="Texture2D" uid="uid://llv2n73t8a04" path="res://sprites/player/attacks/attack air/attack_air_011.png" id="36_dt1el"]
 [ext_resource type="Texture2D" uid="uid://w7gqflob8xuy" path="res://sprites/player/attacks/attack air/attack_air_012.png" id="37_kpls1"]
@@ -193,6 +203,41 @@ animations = [{
 }],
 "loop": 0,
 "name": &"attack_02",
+"speed": 44.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("26_lemm1")
+}, {
+"duration": 1.0,
+"texture": ExtResource("27_gt34p")
+}, {
+"duration": 1.0,
+"texture": ExtResource("28_22ewg")
+}, {
+"duration": 1.5,
+"texture": ExtResource("29_8dnpr")
+}, {
+"duration": 2.0,
+"texture": ExtResource("30_6ntet")
+}, {
+"duration": 2.0,
+"texture": ExtResource("31_wt2me")
+}, {
+"duration": 1.5,
+"texture": ExtResource("32_fg447")
+}, {
+"duration": 1.0,
+"texture": ExtResource("33_1saju")
+}, {
+"duration": 1.0,
+"texture": ExtResource("34_i21br")
+}, {
+"duration": 1.0,
+"texture": ExtResource("35_6rasd")
+}],
+"loop": 0,
+"name": &"attack_03",
 "speed": 44.0
 }, {
 "frames": [{
@@ -529,15 +574,16 @@ size = Vector2(91, 167)
 collision_layer = 3
 collision_mask = 5
 script = ExtResource("1_1iki0")
-jump_velocity = -700.0
+jump_velocity = -800.0
 frames_attack_01 = Array[int]([3, 4, 5, 6])
 frames_attack_02 = Array[int]([3, 4, 5, 6])
+frames_attack_03 = Array[int]([3, 4, 5, 6])
 frames_attack_air = Array[int]([6, 7, 8, 9, 10])
 
 [node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=1107217898]
 sprite_frames = SubResource("SpriteFrames_4kxuq")
-animation = &"attack_air"
-frame = 16
+animation = &"attack_02"
+frame = 12
 frame_progress = 1.0
 
 [node name="Hitbox" type="Area2D" parent="." unique_id=1336153033 groups=["player_hitbox"]]
@@ -559,6 +605,9 @@ shape = SubResource("RectangleShape2D_epot7")
 debug_color = Color(0.8591321, 0.0007023239, 0.8792253, 0.41960785)
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1860998430]
+limit_left = 0
+limit_top = 0
+limit_bottom = 1080
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1337045750]
 position = Vector2(-1.5, 9.5)

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b0kvkn4tsdjem"
-path="res://.godot/imported/turn_002.png-99e5599868737484145c1261fa837a74.ctex"
+uid="uid://cjl6mffufh61l"
+path="res://.godot/imported/attack_3_006.png-d0d60e1c631f2161d4542a76a280088e.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/player/original/turn_002.png"
-dest_files=["res://.godot/imported/turn_002.png-99e5599868737484145c1261fa837a74.ctex"]
+source_file="res://sprites/player/original/attack_3_006.png"
+dest_files=["res://.godot/imported/attack_3_006.png-d0d60e1c631f2161d4542a76a280088e.ctex"]
 
 [params]
 

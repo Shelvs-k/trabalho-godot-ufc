@@ -358,20 +358,19 @@ animations = [{
 }]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_12rkj"]
-size = Vector2(37, 3)
+size = Vector2(35.5, 0.35000038)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_2kthm"]
 size = Vector2(18, 30.5)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_y27ko"]
-size = Vector2(35, 30.199999)
+size = Vector2(35, 32.75)
 
 [node name="golem" type="CharacterBody2D" unique_id=1404576968]
 scale = Vector2(5, 5)
 collision_layer = 4
 collision_mask = 3
 script = ExtResource("1_txad0")
-velocidade = 50.0
 distancia_ataque = 200.0
 vida_maxima = 10
 dano = 2
@@ -384,7 +383,8 @@ sprite_frames = SubResource("SpriteFrames_jkwym")
 animation = &"die"
 
 [node name="Colisão" type="CollisionShape2D" parent="." unique_id=2088830475]
-position = Vector2(1, 30.25)
+position = Vector2(0.2500008, 31.574999)
+scale = Vector2(0.9999998, 0.9999998)
 shape = SubResource("RectangleShape2D_12rkj")
 
 [node name="Hitbox" type="Area2D" parent="." unique_id=1004110601]
@@ -400,7 +400,7 @@ collision_layer = 5
 collision_mask = 3
 
 [node name="Colisão" type="CollisionShape2D" parent="Hurtbox" unique_id=1726504866]
-position = Vector2(0.75000095, 13.75)
-scale = Vector2(0.99999994, 0.99999994)
+position = Vector2(0.75000083, 15.024999)
+scale = Vector2(0.9999998, 0.9999998)
 shape = SubResource("RectangleShape2D_y27ko")
 debug_color = Color(0.98986727, 0, 0.29087272, 0.41960785)

@@ -1,6 +1,10 @@
 # Jogo
-Shelvs
+Feito por - Shelvs (Bolivar)
+Scripts - Codex
 
 # Sprites
 Reimu - Twilight Frontier
-hud - BDragon1727
+HUD - BDragon1727
+Monstros - MonoPixelArt
+Tilemaps - Sandstorm
+Parallax - kayillustrations

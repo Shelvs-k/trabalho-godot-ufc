@@ -12,6 +12,7 @@ signal vida_atualizada(vida_atual: int, vida_maxima: int)
 @export var speed: float = 250.0
 @export var run_multiplier: float = 2.5
 @export var jump_velocity: float = -500.0
+@export_range(0.1, 1.0, 0.05) var jump_release_velocity_ratio: float = 0.5
 @export var dash_brake_rate: float = 2000.0
 
 # Vida
@@ -33,6 +34,7 @@ var vida: int
 @export_group("Frames de ataque")
 @export var frames_attack_01: Array[int] = []
 @export var frames_attack_02: Array[int] = []
+@export var frames_attack_03: Array[int] = []
 @export var frames_attack_air: Array[int] = []
 
 @export_group("Hitbox")
@@ -51,6 +53,7 @@ enum EstadoAnim {
 	DASH_E,
 	ATTACK_01,
 	ATTACK_02,
+	ATTACK_03,
 	ATTACK_AIR,
 	FALLING,
 	HIT
@@ -64,6 +67,7 @@ var tempo_invulneravel: float = 0.0
 var freando_dash: bool = false
 var combo_pendente: bool = false
 var alvos_atingidos: Array[Node] = []
+var tempo_limite_acao: float = 0.0
 
 
 func _ready() -> void:
@@ -88,6 +92,7 @@ func _physics_process(delta: float) -> void:
 	var currentAnim: String
 	var direction = Input.get_axis("left", "right")
 	var correndo = Input.is_action_pressed("run") and direction != 0
+	_atualizar_watchdog_acao(delta)
 
 	# Invulnerabilidade
 	if invulneravel:
@@ -99,12 +104,13 @@ func _physics_process(delta: float) -> void:
 
 	# Entrada de ataque
 	if Input.is_action_just_pressed("attack"):
-		if estadoAnimacao == EstadoAnim.ATTACK_01:
+		if estadoAnimacao in [EstadoAnim.ATTACK_01, EstadoAnim.ATTACK_02]:
 			combo_pendente = true
 
 		elif estadoAnimacao not in [
 			EstadoAnim.ATTACK_01,
 			EstadoAnim.ATTACK_02,
+			EstadoAnim.ATTACK_03,
 			EstadoAnim.ATTACK_AIR,
 			EstadoAnim.HIT
 		]:
@@ -112,14 +118,17 @@ func _physics_process(delta: float) -> void:
 
 			if is_on_floor():
 				estadoAnimacao = EstadoAnim.ATTACK_01
+				_armar_watchdog_acao("attack_01")
 			else:
 				estadoAnimacao = EstadoAnim.ATTACK_AIR
+				_armar_watchdog_acao("attack_air")
 			alvos_atingidos.clear()
 
 	# Estados de ação
 	var atacando = estadoAnimacao in [
 		EstadoAnim.ATTACK_01,
 		EstadoAnim.ATTACK_02,
+		EstadoAnim.ATTACK_03,
 		EstadoAnim.ATTACK_AIR
 	]
 
@@ -188,6 +197,9 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_just_pressed("jump") and is_on_floor():
 			velocity.y = jump_velocity
 			estadoAnimacao = EstadoAnim.JUMP_S
+
+	if Input.is_action_just_released("jump") and velocity.y < 0.0:
+		velocity.y *= jump_release_velocity_ratio
 
 	move_and_slide()
 	_verificar_alvos_atingidos()
@@ -273,6 +285,8 @@ func _physics_process(delta: float) -> void:
 			currentAnim = "attack_01"
 		EstadoAnim.ATTACK_02:
 			currentAnim = "attack_02"
+		EstadoAnim.ATTACK_03:
+			currentAnim = "attack_03"
 		EstadoAnim.ATTACK_AIR:
 			currentAnim = "attack_air"
 		EstadoAnim.HIT:
@@ -308,6 +322,7 @@ func receber_dano(dano: int, origem: Vector2) -> bool:
 	velocity.y = -knockback_vertical
 
 	estadoAnimacao = EstadoAnim.HIT
+	_armar_watchdog_acao("hit")
 
 	return true
 
@@ -338,6 +353,10 @@ func _atualizar_hitbox() -> void:
 		"attack_02":
 			if estadoAnimacao == EstadoAnim.ATTACK_02:
 				frames_ativos = frames_attack_02
+
+		"attack_03":
+			if estadoAnimacao == EstadoAnim.ATTACK_03:
+				frames_ativos = frames_attack_03
 
 		"attack_air":
 			if estadoAnimacao == EstadoAnim.ATTACK_AIR:
@@ -381,6 +400,7 @@ func registrar_acerto(alvo: Node) -> void:
 
 # Define o estado após uma ação terminar
 func _finalizar_acao() -> void:
+	tempo_limite_acao = 0.0
 	var direction = Input.get_axis("left", "right")
 	var correndo = Input.is_action_pressed("run") and direction != 0
 
@@ -456,11 +476,22 @@ func _on_sprite_animation_finished() -> void:
 					combo_pendente = false
 					alvos_atingidos.clear()
 					estadoAnimacao = EstadoAnim.ATTACK_02
+					_armar_watchdog_acao("attack_02")
 				else:
 					_finalizar_acao()
 
 		"attack_02":
 			if estadoAnimacao == EstadoAnim.ATTACK_02:
+				if combo_pendente:
+					combo_pendente = false
+					alvos_atingidos.clear()
+					estadoAnimacao = EstadoAnim.ATTACK_03
+					_armar_watchdog_acao("attack_03")
+				else:
+					_finalizar_acao()
+
+		"attack_03":
+			if estadoAnimacao == EstadoAnim.ATTACK_03:
 				_finalizar_acao()
 
 		"attack_air":
@@ -472,3 +503,52 @@ func _on_sprite_animation_finished() -> void:
 				_finalizar_acao()
 
 	_desativar_hitbox()
+
+
+func _armar_watchdog_acao(nome_animacao: String) -> void:
+	if not animReimu.sprite_frames.has_animation(nome_animacao):
+		tempo_limite_acao = 0.5
+		return
+
+	var velocidade_animacao := (
+		animReimu.sprite_frames.get_animation_speed(nome_animacao)
+		* absf(animReimu.speed_scale)
+	)
+	if velocidade_animacao <= 0.0:
+		tempo_limite_acao = 0.5
+		return
+
+	var duracao := 0.0
+	for frame in animReimu.sprite_frames.get_frame_count(nome_animacao):
+		duracao += animReimu.sprite_frames.get_frame_duration(nome_animacao, frame)
+	tempo_limite_acao = duracao / velocidade_animacao + 0.5
+
+
+func _atualizar_watchdog_acao(delta: float) -> void:
+	if tempo_limite_acao <= 0.0:
+		return
+
+	tempo_limite_acao -= delta
+	if tempo_limite_acao > 0.0:
+		return
+
+	# Recupera o estado caso animation_finished não seja emitido por algum motivo.
+	match estadoAnimacao:
+		EstadoAnim.ATTACK_01:
+			if combo_pendente:
+				combo_pendente = false
+				alvos_atingidos.clear()
+				estadoAnimacao = EstadoAnim.ATTACK_02
+				_armar_watchdog_acao("attack_02")
+			else:
+				_finalizar_acao()
+		EstadoAnim.ATTACK_02:
+			if combo_pendente:
+				combo_pendente = false
+				alvos_atingidos.clear()
+				estadoAnimacao = EstadoAnim.ATTACK_03
+				_armar_watchdog_acao("attack_03")
+			else:
+				_finalizar_acao()
+		EstadoAnim.ATTACK_03, EstadoAnim.ATTACK_AIR, EstadoAnim.HIT:
+			_finalizar_acao()

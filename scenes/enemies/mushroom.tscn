@@ -351,13 +351,13 @@ animations = [{
 }]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_qp71w"]
-size = Vector2(29, 3)
+size = Vector2(29, 0.5)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vrb8y"]
 size = Vector2(18, 21)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_0g08y"]
-size = Vector2(29, 30.199999)
+size = Vector2(29, 32.5)
 
 [node name="mushroom" type="CharacterBody2D" unique_id=2141812387]
 scale = Vector2(2, 2)
@@ -377,7 +377,7 @@ frame = 9
 frame_progress = 1.0
 
 [node name="Colisão" type="CollisionShape2D" parent="." unique_id=1622854128]
-position = Vector2(-1.5, 30.5)
+position = Vector2(-1.5, 31.75)
 shape = SubResource("RectangleShape2D_qp71w")
 
 [node name="Hitbox" type="Area2D" parent="." unique_id=1733628782]
@@ -393,7 +393,7 @@ collision_layer = 5
 collision_mask = 3
 
 [node name="Colisão" type="CollisionShape2D" parent="Hurtbox" unique_id=841689724]
-position = Vector2(-1.4999998, 14.099999)
+position = Vector2(-1.4999998, 15.25)
 scale = Vector2(0.99999994, 0.99999994)
 shape = SubResource("RectangleShape2D_0g08y")
 debug_color = Color(0.98986727, 0, 0.29087272, 0.41960785)

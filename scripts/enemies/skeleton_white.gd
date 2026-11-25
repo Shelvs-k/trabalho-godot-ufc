@@ -85,7 +85,7 @@ func _physics_process(delta: float) -> void:
 			_atualizar_movimento()
 
 		Estado.ATTACK:
-			velocity.x = move_toward(velocity.x, 0.0, 1000.0 * delta)
+			velocity.x = 0.0
 
 		Estado.HURT:
 			velocity.x = move_toward(
