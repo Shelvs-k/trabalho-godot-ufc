@@ -126,13 +126,13 @@ animations = [{
 "duration": 1.0,
 "texture": ExtResource("5_aw5qh")
 }, {
-"duration": 1.0,
+"duration": 1.5,
 "texture": ExtResource("6_qk1i8")
 }, {
-"duration": 1.0,
+"duration": 1.5,
 "texture": ExtResource("7_nstwl")
 }, {
-"duration": 1.0,
+"duration": 1.5,
 "texture": ExtResource("8_ucnu6")
 }, {
 "duration": 1.0,
@@ -164,16 +164,16 @@ animations = [{
 "duration": 1.0,
 "texture": ExtResource("16_v3vkp")
 }, {
-"duration": 1.0,
+"duration": 1.5,
 "texture": ExtResource("17_qh5ue")
 }, {
-"duration": 1.0,
+"duration": 1.5,
 "texture": ExtResource("18_6oag8")
 }, {
-"duration": 1.0,
+"duration": 1.5,
 "texture": ExtResource("19_lemm1")
 }, {
-"duration": 1.0,
+"duration": 1.5,
 "texture": ExtResource("20_gt34p")
 }, {
 "duration": 1.0,
@@ -217,22 +217,22 @@ animations = [{
 "duration": 1.0,
 "texture": ExtResource("32_50sde")
 }, {
-"duration": 1.0,
+"duration": 1.5,
 "texture": ExtResource("33_n0j7a")
 }, {
-"duration": 1.0,
+"duration": 2.0,
 "texture": ExtResource("34_pqdx4")
 }, {
-"duration": 1.0,
+"duration": 2.0,
 "texture": ExtResource("35_8fcxs")
 }, {
-"duration": 1.0,
+"duration": 2.0,
 "texture": ExtResource("36_dt1el")
 }, {
-"duration": 1.0,
+"duration": 2.0,
 "texture": ExtResource("37_kpls1")
 }, {
-"duration": 1.0,
+"duration": 1.5,
 "texture": ExtResource("38_pdgr8")
 }, {
 "duration": 1.0,
@@ -536,8 +536,9 @@ frames_attack_air = Array[int]([6, 7, 8, 9, 10])
 
 [node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=1107217898]
 sprite_frames = SubResource("SpriteFrames_4kxuq")
-animation = &"idle"
-frame_progress = 0.11996308
+animation = &"attack_air"
+frame = 16
+frame_progress = 1.0
 
 [node name="Hitbox" type="Area2D" parent="." unique_id=1336153033 groups=["player_hitbox"]]
 collision_layer = 3

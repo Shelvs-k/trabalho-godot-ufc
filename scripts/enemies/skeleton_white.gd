@@ -5,6 +5,7 @@ extends CharacterBody2D
 @onready var hurtbox: Area2D = $Hurtbox
 @onready var hitbox: Area2D = $Hitbox
 @onready var hitbox_shape: CollisionShape2D = $"Hitbox/Colisão"
+@onready var physics_shape: CollisionShape2D = $"Colisão"
 
 @export_group("Movimento")
 @export var velocidade: float = 100.0
@@ -267,11 +268,11 @@ func morrer() -> void:
 	_desativar_hitbox()
 
 	hurtbox.set_deferred("monitoring", false)
+	hurtbox.set_deferred("monitorable", false)
+	$"Hurtbox/Colisão".set_deferred("disabled", true)
+	physics_shape.set_deferred("disabled", true)
 
 	velocity = Vector2.ZERO
-
-	# Desativa a colisão física
-	$"Hurtbox/Colisão".set_deferred("disabled", true)
 
 	sprite.play("die")
 

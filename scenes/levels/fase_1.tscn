@@ -4,6 +4,8 @@
 [ext_resource type="PackedScene" uid="uid://3sbxvg8x67t4" path="res://scenes/enemies/skeleton_white.tscn" id="2_u1f2d"]
 [ext_resource type="PackedScene" uid="uid://cu83iifmnyq3" path="res://scenes/enemies/skeleton_yellow.tscn" id="3_5kpeh"]
 [ext_resource type="PackedScene" uid="uid://db17cqo18u7bm" path="res://scenes/ui/hud.tscn" id="4_hud"]
+[ext_resource type="PackedScene" uid="uid://bvrn4jcjg3tdo" path="res://scenes/enemies/mushroom.tscn" id="5_ga7mg"]
+[ext_resource type="PackedScene" uid="uid://blt80dtkvs2c0" path="res://scenes/enemies/golem.tscn" id="6_puiwa"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_4kxuq"]
 size = Vector2(1972, 208)
@@ -24,13 +26,13 @@ shape = SubResource("RectangleShape2D_4kxuq")
 [node name="Skeleton_White" parent="." unique_id=190460209 instance=ExtResource("2_u1f2d")]
 position = Vector2(1064, 656)
 
-[node name="Skeleton_White2" parent="." unique_id=976759248 instance=ExtResource("2_u1f2d")]
-position = Vector2(89.99999, 65.99999)
-
 [node name="CharacterBody2D" parent="." unique_id=226562393 instance=ExtResource("3_5kpeh")]
 position = Vector2(1024, 396)
 
-[node name="CharacterBody2D2" parent="." unique_id=1591156477 instance=ExtResource("3_5kpeh")]
-position = Vector2(7, 538)
+[node name="HUD" parent="." unique_id=1231983816 instance=ExtResource("4_hud")]
 
-[node name="HUD" parent="." instance=ExtResource("4_hud")]
+[node name="mushroom" parent="." unique_id=2141812387 instance=ExtResource("5_ga7mg")]
+position = Vector2(33, 542)
+
+[node name="golem" parent="." unique_id=1404576968 instance=ExtResource("6_puiwa")]
+position = Vector2(187, 354)

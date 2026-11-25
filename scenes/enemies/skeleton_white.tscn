@@ -437,7 +437,7 @@ size = Vector2(23, 43.2)
 
 [node name="Skeleton_White" type="CharacterBody2D" unique_id=190460209 groups=["enemies"]]
 scale = Vector2(2.5, 2.5)
-collision_layer = 5
+collision_layer = 4
 collision_mask = 3
 script = ExtResource("1_epot7")
 distancia_ataque = 120.0
