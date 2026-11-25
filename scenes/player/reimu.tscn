@@ -606,7 +606,6 @@ debug_color = Color(0.8591321, 0.0007023239, 0.8792253, 0.41960785)
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1860998430]
 limit_left = 0
-limit_top = 0
 limit_bottom = 1080
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1337045750]

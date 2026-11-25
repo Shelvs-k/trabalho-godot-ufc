@@ -217,7 +217,7 @@ func _physics_process(delta: float) -> void:
 	# Atualização dos estados de movimento
 	if not atacando and not recebendo_hit:
 		if not is_on_floor():
-			if estadoAnimacao in [
+			var estados_chao = [
 				EstadoAnim.IDLE,
 				EstadoAnim.WALK_S,
 				EstadoAnim.WALK_L,
@@ -225,12 +225,13 @@ func _physics_process(delta: float) -> void:
 				EstadoAnim.DASH_S,
 				EstadoAnim.DASH_L,
 				EstadoAnim.DASH_E
-			]:
-				estadoAnimacao = EstadoAnim.FALLING
+			]
 
-			elif velocity.y >= 0:
-				if estadoAnimacao in [EstadoAnim.JUMP_S, EstadoAnim.JUMP_L]:
+			if velocity.y >= 0:
+				if estadoAnimacao in estados_chao + [EstadoAnim.JUMP_S, EstadoAnim.JUMP_L]:
 					estadoAnimacao = EstadoAnim.JUMP_E
+			elif estadoAnimacao in estados_chao:
+				estadoAnimacao = EstadoAnim.FALLING
 
 		else:
 			if estadoAnimacao in [
