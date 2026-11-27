@@ -6,6 +6,8 @@ signal vida_atualizada(vida_atual: int, vida_maxima: int)
 @onready var animReimu: AnimatedSprite2D = $Sprite
 @onready var hitbox: Area2D = $Hitbox
 @onready var hitbox_shape: CollisionShape2D = $Hitbox/Colisão
+@onready var alerta_vida_baixa: AudioStreamPlayer = $AlertaVidaBaixa
+@onready var timer_alerta_vida_baixa: Timer = $TimerAlertaVidaBaixa
 
 # Movimento
 @export_group("Movimento")
@@ -66,6 +68,8 @@ var invulneravel: bool = false
 var tempo_invulneravel: float = 0.0
 
 var freando_dash: bool = false
+var freando_no_ar: bool = false
+var correndo_frame_anterior: bool = false
 var tempo_coyote_restante: float = 0.0
 var combo_pendente: bool = false
 var alvos_atingidos: Array[Node] = []
@@ -74,10 +78,13 @@ var tempo_limite_acao: float = 0.0
 
 func _ready() -> void:
 	vida = vida_maxima
+	timer_alerta_vida_baixa.wait_time = 1.0
+	timer_alerta_vida_baixa.timeout.connect(_tocar_alerta_vida_baixa)
 
 	hitbox_offset_editor = hitbox_shape.position
 
 	hitbox.add_to_group("player_hitbox")
+	$Hurtbox.add_to_group("player_hurtbox")
 	hitbox_shape.disabled = true
 	hitbox.monitoring = false
 
@@ -95,6 +102,11 @@ func _physics_process(delta: float) -> void:
 	var direction = Input.get_axis("left", "right")
 	var correndo = Input.is_action_pressed("run") and direction != 0
 	_atualizar_watchdog_acao(delta)
+	if not is_on_floor() and correndo_frame_anterior and not correndo:
+		freando_no_ar = true
+	correndo_frame_anterior = correndo
+	if is_on_floor():
+		freando_no_ar = false
 
 	if is_on_floor():
 		tempo_coyote_restante = tempo_coyote
@@ -150,8 +162,9 @@ func _physics_process(delta: float) -> void:
 					freando_dash = true
 
 	# Retoma a corrida durante a frenagem
-	if correndo and freando_dash and not recebendo_hit:
+	if correndo and (freando_dash or freando_no_ar) and not recebendo_hit:
 		freando_dash = false
+		freando_no_ar = false
 
 		if not atacando:
 			estadoAnimacao = EstadoAnim.DASH_S
@@ -164,7 +177,7 @@ func _physics_process(delta: float) -> void:
 			knockback_friction * delta
 		)
 
-	elif freando_dash:
+	elif freando_dash or freando_no_ar:
 		var velocidade_alvo = 0.0
 
 		if direction != 0 and signf(velocity.x) == signf(-direction):
@@ -178,7 +191,10 @@ func _physics_process(delta: float) -> void:
 
 		if is_zero_approx(velocity.x) or is_equal_approx(velocity.x, velocidade_alvo):
 			velocity.x = velocidade_alvo
-			freando_dash = false
+			if freando_dash:
+				freando_dash = false
+			else:
+				freando_no_ar = false
 
 	else:
 		var velocidade_atual = speed
@@ -315,6 +331,7 @@ func receber_dano(dano: int, origem: Vector2) -> bool:
 
 	vida = maxi(0, vida - dano)
 	vida_atualizada.emit(vida, vida_maxima)
+	_atualizar_alerta_vida_baixa()
 
 	invulneravel = true
 	tempo_invulneravel = tempo_invulnerabilidade
@@ -336,6 +353,20 @@ func receber_dano(dano: int, origem: Vector2) -> bool:
 	_armar_watchdog_acao("hit")
 
 	return true
+
+
+func _atualizar_alerta_vida_baixa() -> void:
+	var vida_baixa = vida * 100 <= vida_maxima * 20
+	if vida_baixa and timer_alerta_vida_baixa.is_stopped():
+		_tocar_alerta_vida_baixa()
+		timer_alerta_vida_baixa.start()
+	elif not vida_baixa:
+		timer_alerta_vida_baixa.stop()
+		alerta_vida_baixa.stop()
+
+
+func _tocar_alerta_vida_baixa() -> void:
+	alerta_vida_baixa.play()
 
 
 # Atualiza a orientação da hitbox

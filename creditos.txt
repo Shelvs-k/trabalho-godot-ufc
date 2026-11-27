@@ -1,6 +1,10 @@
+# Touhou Project
+Feito por - ZUN
+
 # Jogo
 Feito por - Shelvs (Bolivar)
 Scripts - Codex
+BGM - ZUN
 
 # Sprites
 Reimu - Twilight Frontier

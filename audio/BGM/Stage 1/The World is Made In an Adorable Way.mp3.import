@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dg1l2lkomliko"
+path="res://.godot/imported/The World is Made In an Adorable Way.mp3-38190e23f623b76f16324c7ce2473694.mp3str"
+
+[deps]
+
+source_file="res://audio/BGM/Stage 1/The World is Made In an Adorable Way.mp3"
+dest_files=["res://.godot/imported/The World is Made In an Adorable Way.mp3-38190e23f623b76f16324c7ce2473694.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
